@@ -1,0 +1,84 @@
+import re
+
+# Read the intermediate sqlite_dump.sql (already cleaned) — but we don't have it saved.
+# So instead, re-run the cleaning on my_database_dump.sql with the fix.
+
+print("Reading MySQL dump...")
+try:
+    with open('my_database_dump.sql', 'r', encoding='utf-8') as f:
+        sql = f.read()
+except UnicodeDecodeError:
+    with open('my_database_dump.sql', 'r', encoding='latin-1') as f:
+        sql = f.read()
+
+print("Cleaning MySQL-specific syntax...")
+
+sql = re.sub(r'/\*!.*?\*/', '', sql, flags=re.DOTALL)
+sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
+sql = re.sub(r'(?m)^\s*--.*$', '', sql)
+sql = re.sub(r'(?mi)^\s*SET\s+.*?;', '', sql)
+sql = re.sub(r'(?mi)^\s*(UN)?LOCK\s+TABLES.*?;?$', '', sql)
+sql = sql.replace('`', '')
+
+# KEY FIX: remove DEFAULT current_timestamp() BEFORE other processing
+sql = re.sub(r'DEFAULT\s+current_timestamp\s*\(\s*\)', 'DEFAULT NULL', sql, flags=re.IGNORECASE)
+sql = re.sub(r'DEFAULT\s+current_timestamp\b(?!\s*\()', 'DEFAULT NULL', sql, flags=re.IGNORECASE)
+
+# Line-by-line cleaning inside CREATE TABLE
+lines = sql.split('\n')
+clean_lines = []
+in_create = False
+for line in lines:
+    stripped = line.strip()
+    if re.match(r'^CREATE\s+TABLE', stripped, re.IGNORECASE):
+        in_create = True
+        clean_lines.append(line)
+        continue
+    if in_create and stripped.startswith(')'):
+        in_create = False
+        line = re.sub(r'\)\s*ENGINE\s*=[^;]*;', ');', line, flags=re.IGNORECASE)
+        clean_lines.append(line)
+        continue
+    if in_create:
+        if re.match(r'^(PRIMARY|UNIQUE|FULLTEXT|SPATIAL)?\s*KEY\b', stripped, re.IGNORECASE):
+            continue
+        if re.match(r'^CONSTRAINT\b', stripped, re.IGNORECASE):
+            continue
+        if re.match(r'^(UNIQUE|FULLTEXT|SPATIAL)\s+(INDEX|KEY)\b', stripped, re.IGNORECASE):
+            continue
+        if re.match(r'^USING\s+(BTREE|HASH)', stripped, re.IGNORECASE):
+            continue
+        line = re.sub(r'\s+USING\s+(BTREE|HASH)', '', line, flags=re.IGNORECASE)
+    clean_lines.append(line)
+sql = '\n'.join(clean_lines)
+
+# Convert data types
+sql = re.sub(r'\b(tiny|small|medium|big)?int\s*\(\s*\d+\s*\)', 'INTEGER', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\b(tiny|small|medium|big)?int\b', 'INTEGER', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\b(varchar|char|nvarchar)\s*\(\s*\d+\s*\)', 'TEXT', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\b(long|medium|tiny)?text\b', 'TEXT', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\b(decimal|numeric|double|float)\s*\(\s*\d+\s*,\s*\d+\s*\)', 'REAL', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\b(decimal|numeric|double|float)\b', 'REAL', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\b(datetime|timestamp|date|time)\b', 'TEXT', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\b(long|medium|tiny)?blob\b', 'BLOB', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\benum\s*\([^)]*\)', 'TEXT', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\bset\s*\([^)]*\)', 'TEXT', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\byear\b', 'INTEGER', sql, flags=re.IGNORECASE)
+
+# Remove modifiers
+sql = re.sub(r'\s+AUTO_INCREMENT\b', '', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\s+UNSIGNED\b', '', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\s+ZEROFILL\b', '', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\s+CHARACTER SET\s+\w+', '', sql, flags=re.IGNORECASE)
+sql = re.sub(r'\s+COLLATE[= ]\w+', '', sql, flags=re.IGNORECASE)
+sql = re.sub(r',\s*\)', ')', sql)
+
+# Fix invalid dates
+sql = sql.replace("'0000-00-00 00:00:00'", "NULL")
+sql = sql.replace("'0000-00-00'", "NULL")
+sql = sql.replace("0000-00-00 00:00:00", "NULL")
+
+with open('sqlite_dump.sql', 'w', encoding='utf-8') as f:
+    f.write(sql)
+
+print("Done! 'sqlite_dump.sql' has been created.")
