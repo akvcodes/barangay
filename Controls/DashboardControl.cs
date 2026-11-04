@@ -124,6 +124,25 @@ namespace BarangayManagementSystem.Controls
             };
             _topBar.Controls.Add(btnBack);
 
+            var btnRefresh = new Button
+            {
+                Text = "⟳  Refresh",
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(45, 65, 155),
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Size = new Size(112, 36),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new Point(0, 8)
+            };
+            btnRefresh.FlatAppearance.BorderColor = Color.FromArgb(120, 255, 255, 255);
+            btnRefresh.FlatAppearance.BorderSize = 1;
+            btnRefresh.FlatAppearance.MouseOverBackColor = Color.FromArgb(65, 85, 175);
+            btnRefresh.Click += (s, e) => RefreshDashboard();
+            _topBar.Controls.Add(btnRefresh);
+            _topBar.Resize += (s, e) => btnRefresh.Left = _topBar.ClientSize.Width - btnRefresh.Width - 14;
+
             var lblTopTitle = new Label
             {
                 Text = "📊   Analytics Dashboard",

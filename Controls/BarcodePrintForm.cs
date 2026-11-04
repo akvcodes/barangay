@@ -44,7 +44,7 @@ namespace BarangayManagementSystem
         {
             _residentId = residentId;
             _residentName = residentName;
-            _address = address;
+            _address = DecryptForDisplay(address);
 
             this.Text = "Print QR Code ID Card";
             this.StartPosition = FormStartPosition.CenterParent;
@@ -70,6 +70,21 @@ namespace BarangayManagementSystem
                 var data = gen.CreateQrCode(qrData, QRCodeGenerator.ECCLevel.Q);
                 using (var code = new QRCode(data))
                     _qrBitmap = code.GetGraphic(10, Color.Black, Color.White, true);
+            }
+        }
+
+        private static string DecryptForDisplay(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return value;
+
+            try
+            {
+                return CryptoHelper.Decrypt(value, KeyManager.LoadKey());
+            }
+            catch (CryptoException)
+            {
+                return value;
             }
         }
 

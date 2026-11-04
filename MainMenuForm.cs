@@ -17,6 +17,8 @@ namespace BarangayManagementSystem
         private Panel _clockBadge;
         private Label _brandMunicipality;
         private FlowLayoutPanel _bottomStatusFlow;
+        private Label _profileBadge;
+        private Button _btnRefresh;
 
         private static readonly string CONFIG_FILE = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -30,8 +32,10 @@ namespace BarangayManagementSystem
         private void MainMenuForm_Load(object sender, EventArgs e)
         {
             ConfigureOverhauledLayout();
+            CurrentUser.LoadProfile();
             LoadLiveBranding();
             lblSuperAdmin.Text = $"{CurrentUser.Username.ToLower()} · {CurrentUser.Role}";
+            BuildProfileBadge();
             LayoutTopBar();
 
             // ── Fix PictureBox white borders ──────────────────────────────────
@@ -108,7 +112,7 @@ namespace BarangayManagementSystem
                     : (() =>
                     {
                         AuditLogger.Log("VIEW", "System", "Opened Connection Setup");
-                        new Integration.ConnectionSettingsViewForm().ShowDialog(this);
+                        new Integration.ConnectionSettingsEditForm().ShowDialog(this);
                         RefreshDbStatus();
                     }));
 
@@ -134,6 +138,8 @@ namespace BarangayManagementSystem
                 tileUserLogs.Visible = false;
             }
 
+            lblLogout.Text = "EXIT";
+            lblLogoutSub.Text = "Exit program";
             WireTile(tileLogout, picLogout, lblLogout, lblLogoutSub,
                 Color.FromArgb(153, 27, 27), DoLogout);
 
@@ -237,6 +243,20 @@ namespace BarangayManagementSystem
             _bottomStatusFlow.Controls.Add(_connectionStatusDot);
             _bottomStatusFlow.Controls.Add(_connectionModeLabel);
             panelBottomBar.Controls.Add(_bottomStatusFlow);
+            _btnRefresh = new Button
+            {
+                Text = "REFRESH",
+                Size = new Size(86, 28),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.White,
+                ForeColor = Color.FromArgb(26, 35, 126),
+                Font = new Font("Segoe UI", 8f, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            _btnRefresh.FlatAppearance.BorderColor = Color.FromArgb(190, 198, 225);
+            _btnRefresh.Click += (s, e) => RefreshMainMenu();
+            panelBottomBar.Controls.Add(_btnRefresh);
             tileDate.Controls.Add(_clockPulse);
             tileDate.Controls.Add(_clockBadge);
             tileDate.Resize += (s, e) => LayoutDateTile();
@@ -247,6 +267,8 @@ namespace BarangayManagementSystem
             _connectionModeLabel.Click += openSettings;
             _bottomStatusFlow.Click += openSettings;
             panelTopBar.Resize += (s, e) => LayoutTopBar();
+            panelBottomBar.Resize += (s, e) => LayoutBottomRefresh();
+            LayoutBottomRefresh();
             tileDbStatus.Visible = false;
             tileBackup.Visible = false;
             tileUserMgmt.Visible = false;
@@ -314,6 +336,82 @@ namespace BarangayManagementSystem
             _clockPulse.Location = new Point(tileDate.ClientSize.Width - 34, 122);
         }
 
+        private void BuildProfileBadge()
+        {
+            string username = CurrentUser.Username ?? "User";
+            string initials = username.Trim().Length == 0
+                ? "U"
+                : username.Trim().Substring(0, Math.Min(2, username.Trim().Length)).ToUpperInvariant();
+
+            _profileBadge = new Label
+            {
+                Text = CurrentUser.ProfilePhoto == null ? initials : string.Empty,
+                Size = new Size(40, 40),
+                BackColor = Color.FromArgb(224, 231, 255),
+                ForeColor = Color.FromArgb(26, 35, 126),
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleCenter,
+                BackgroundImageLayout = ImageLayout.Zoom,
+                Cursor = Cursors.Hand,
+                TabStop = false
+            };
+            if (CurrentUser.ProfilePhoto != null)
+            {
+                using (var stream = new MemoryStream(CurrentUser.ProfilePhoto))
+                using (var image = Image.FromStream(stream))
+                    _profileBadge.BackgroundImage = new Bitmap(image);
+            }
+            _profileBadge.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, 40, 40, 40, 40));
+            var profileMenu = new ContextMenuStrip();
+            profileMenu.Items.Add("Edit Profile", null, (s, e) =>
+            {
+                var settings = new SettingsHubControl();
+                settings.ShowMyAccount();
+                OpenControl(settings, "My account");
+                RefreshMainMenu();
+            });
+            _profileBadge.Click += (s, e) => profileMenu.Show(_profileBadge, new Point(0, _profileBadge.Height));
+            panelTopBar.Controls.Add(_profileBadge);
+        }
+
+        private void UpdateProfileBadge()
+        {
+            if (_profileBadge == null) return;
+            _profileBadge.BackgroundImage?.Dispose();
+            _profileBadge.BackgroundImage = null;
+            string username = CurrentUser.Username ?? "User";
+            _profileBadge.Text = CurrentUser.ProfilePhoto == null
+                ? (username.Trim().Length == 0 ? "U" : username.Trim().Substring(0, Math.Min(2, username.Trim().Length)).ToUpperInvariant())
+                : string.Empty;
+            if (CurrentUser.ProfilePhoto != null)
+            {
+                using (var stream = new MemoryStream(CurrentUser.ProfilePhoto))
+                using (var image = Image.FromStream(stream))
+                    _profileBadge.BackgroundImage = new Bitmap(image);
+            }
+            _profileBadge.Invalidate();
+        }
+
+        private void LayoutBottomRefresh()
+        {
+            if (_btnRefresh == null) return;
+            int rightEdge = lblBottomRight != null && lblBottomRight.Left > 0
+                ? lblBottomRight.Left - 10
+                : panelBottomBar.ClientSize.Width - 10;
+            _btnRefresh.Size = new Size(86, 24);
+            _btnRefresh.Location = new Point(Math.Max(0, rightEdge - _btnRefresh.Width), 3);
+        }
+
+        private void RefreshMainMenu()
+        {
+            CurrentUser.LoadProfile();
+            UpdateProfileBadge();
+            LoadLiveBranding();
+            RefreshDbStatus();
+            RefreshNotifBadge();
+            timerClock_Tick(null, null);
+        }
+
         private void LayoutTopBar()
         {
             int left = picLogoTop.Right + 12;
@@ -325,6 +423,23 @@ namespace BarangayManagementSystem
             lblSystemSub.AutoSize = true;
             lblSystemSub.Location = new Point(lblSystemTitle.Right + 14, 22);
             lblSystemSub.BringToFront();
+
+            if (_profileBadge != null)
+            {
+                _profileBadge.Location = new Point(panelTopBar.ClientSize.Width - 62, 18);
+                _profileBadge.BringToFront();
+                picNotifBell.Location = new Point(panelTopBar.ClientSize.Width - 112, 17);
+                int rightEdge = picNotifBell.Left - 12;
+                int logoWidth = 150;
+                int logoLeft = Math.Max(lblSystemSub.Right + 20, rightEdge - 360);
+                pictureBox1.Location = new Point(logoLeft, 4);
+                pictureBox1.Size = new Size(logoWidth, 64);
+                pictureBox1.BringToFront();
+                lblWelcomeUser.Location = new Point(logoLeft + logoWidth + 12, 24);
+                lblWelcomeUser.Width = Math.Max(120, rightEdge - lblWelcomeUser.Left);
+                lblWelcomeUser.BringToFront();
+                _profileBadge.BringToFront();
+            }
         }
 
         private void BrandPanel_Paint(object sender, PaintEventArgs e)
@@ -589,6 +704,7 @@ namespace BarangayManagementSystem
             lblBottomRight.Text = $"{now:dd/MM/yyyy}   {now:h:mm tt}   ·  {CurrentUser.Username}";
             if (lblBottomRight.IsHandleCreated)
                 lblBottomRight.Left = panelBottomBar.Width - lblBottomRight.Width - 14;
+            LayoutBottomRefresh();
         }
 
         private static void WireTile(Panel tile, PictureBox pic,
@@ -643,8 +759,7 @@ namespace BarangayManagementSystem
 
         private void DoLogout()
         {
-            if (MessageBox.Show("Are you sure you want to logout?", "Logout",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            if (ThemedDialog.Confirm("Are you sure you want to exit?", "Exit Application"))
             {
                 AuditLogger.Log("LOGOUT", "Login", $"{CurrentUser.Username} logged out");
                 timerClock.Stop();

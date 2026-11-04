@@ -197,8 +197,14 @@ namespace BarangayManagementSystem.Controls
             btnSearch.Click += (s, e) => LoadOfficials(_txtSearch.Text.Trim());
             searchCard.Controls.Add(btnSearch);
 
+            var btnRefresh = Btn("⟳  Refresh", BtnGray, 9.5f);
+            btnRefresh.Location = new Point(718, 15);
+            btnRefresh.Size = new Size(112, 32);
+            btnRefresh.Click += (s, e) => LoadOfficials(_txtSearch.Text.Trim());
+            searchCard.Controls.Add(btnRefresh);
+
             var btnAdd = Btn("+ Add New Official", BtnGreen, 9.5f);
-            btnAdd.Location = new Point(524, 15);
+            btnAdd.Location = new Point(838, 15);
             btnAdd.Size = new Size(190, 32);
             btnAdd.Click += (s, e) => ShowForm(false);
             searchCard.Controls.Add(btnAdd);

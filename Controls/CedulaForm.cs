@@ -606,7 +606,7 @@ namespace BarangayManagementSystem
                         _residentId = id;
                         _fullName = r["FullName"].ToString()
                             .Replace("  ", " ").Trim();
-                        _address = r["Address"]?.ToString() ?? "";
+                        _address = DecryptForPrint(r["Address"]?.ToString() ?? "");
                         _gender = r["Gender"]?.ToString() ?? "";
                         _occupationFromResident = r["Occupation"]?.ToString() ?? "";
                         _civilStatusFromResident = r["CivilStatus"]?.ToString() ?? "Single";
@@ -820,6 +820,9 @@ namespace BarangayManagementSystem
 
         private void DrawCedulaDocument(Graphics g, float x, float y, float w, float h)
         {
+            string addressForPrint = DecryptForPrint(_address);
+            string tinForPrint = DecryptForPrint(_tin);
+
             // ── Document border ───────────────────────────────────────────────
             using (var pen = new Pen(Color.Black, 2))
                 g.DrawRectangle(pen, x, y, w - 1, h - 1);
@@ -865,14 +868,14 @@ namespace BarangayManagementSystem
                 "Weight:", string.IsNullOrWhiteSpace(_weight) ? "—" : _weight, lx, vx, w, cur); cur += 4;
             cur = DrawRowDouble(g, "Place of Birth:", string.IsNullOrWhiteSpace(_placeOfBirth) ? "—" : _placeOfBirth,
                 "Citizenship:", _citizenship, lx, vx, w, cur); cur += 4;
-            cur = DrawRowDouble(g, "TIN:", string.IsNullOrWhiteSpace(_tin) ? "—" : _tin,
+            cur = DrawRowDouble(g, "TIN:", string.IsNullOrWhiteSpace(tinForPrint) ? "—" : tinForPrint,
                 "Age / DOB:", $"{_age}  ({(_dob == DateTime.MinValue ? "—" : _dob.ToString("MMM dd, yyyy"))})", lx, vx, w, cur); cur += 4;
             if (!string.IsNullOrWhiteSpace(_icrNumber))
             {
                 cur = DrawRow(g, "ICR Number:", _icrNumber, lx, vx, vw, cur); cur += 4;
             }
             cur = DrawRow(g, "Occupation:", _txtOccupation?.Text ?? "", lx, vx, vw, cur); cur += 4;
-            cur = DrawRow(g, "Address:", _address, lx, vx, vw, cur);
+            cur = DrawRow(g, "Address:", addressForPrint, lx, vx, vw, cur);
             cur += 16;
 
             // ── Tax breakdown table ────────────────────────────────────────────
@@ -941,6 +944,21 @@ namespace BarangayManagementSystem
         }
 
         // ── Drawing helpers ───────────────────────────────────────────────────
+        private static string DecryptForPrint(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return value;
+
+            try
+            {
+                return CryptoHelper.Decrypt(value, KeyManager.LoadKey());
+            }
+            catch (CryptoException)
+            {
+                return value;
+            }
+        }
+
         private void DrawCentered(Graphics g, string text, float cx, float y,
             float size, FontStyle style)
         {

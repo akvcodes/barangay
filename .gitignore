@@ -1,0 +1,11 @@
+
+# C# WinForms (Barangay Management System)
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.pdb
+*.sqlite
+*.db
+key.dat

@@ -1265,8 +1265,10 @@ namespace BarangayManagementSystem.Controls
                     if (DateTime.Now.DayOfYear < dob.DayOfYear) age--;
 
                     string gender = r["Gender"]?.ToString() ?? "N/A";
-                    string contact = r["ContactNumber"]?.ToString() ?? "N/A";
-                    string address = r["Address"]?.ToString() ?? "N/A";
+                    string contact = DecryptForDisplay(r["ContactNumber"]);
+                    string address = DecryptForDisplay(r["Address"]);
+                    if (string.IsNullOrWhiteSpace(contact)) contact = "N/A";
+                    if (string.IsNullOrWhiteSpace(address)) address = "N/A";
                     string civil = "Single";
                     string occ = "";
                     try { civil = r["CivilStatus"]?.ToString() ?? "Single"; } catch { }
@@ -1290,7 +1292,12 @@ namespace BarangayManagementSystem.Controls
                     try { _infoCitizenship.Text = string.IsNullOrWhiteSpace(r["Citizenship"]?.ToString()) ? "Filipino" : r["Citizenship"].ToString(); } catch { _infoCitizenship.Text = "Filipino"; }
                     try { _infoHeight.Text = string.IsNullOrWhiteSpace(r["Height"]?.ToString()) ? "—" : r["Height"].ToString(); } catch { _infoHeight.Text = "—"; }
                     try { _infoWeight.Text = string.IsNullOrWhiteSpace(r["Weight"]?.ToString()) ? "—" : r["Weight"].ToString(); } catch { _infoWeight.Text = "—"; }
-                    try { _infoTIN.Text = string.IsNullOrWhiteSpace(r["TIN"]?.ToString()) ? "—" : r["TIN"].ToString(); } catch { _infoTIN.Text = "—"; }
+                    try
+                    {
+                        string tin = DecryptForDisplay(r["TIN"]);
+                        _infoTIN.Text = string.IsNullOrWhiteSpace(tin) ? "—" : tin;
+                    }
+                    catch { _infoTIN.Text = "—"; }
                     try { _infoICR.Text = string.IsNullOrWhiteSpace(r["ICRNumber"]?.ToString()) ? "—" : r["ICRNumber"].ToString(); } catch { _infoICR.Text = "—"; }
 
                     byte[] photoBytes = r["Photo"] != DBNull.Value ? (byte[])r["Photo"] : null;
@@ -1466,6 +1473,15 @@ namespace BarangayManagementSystem.Controls
                 case "Ayuda": return ay + order;
                 default: return $"({cl}) UNION ALL ({ct}) UNION ALL ({bl}) UNION ALL ({ay})" + order;
             }
+        }
+
+        private static string DecryptForDisplay(object value)
+        {
+            if (value == null || value == DBNull.Value) return "";
+            string original = value.ToString();
+            if (string.IsNullOrEmpty(original)) return original;
+            try { return CryptoHelper.Decrypt(original, KeyManager.LoadKey()); }
+            catch (CryptoException) { return original; }
         }
 
         private void OpenEditProfileDialog()

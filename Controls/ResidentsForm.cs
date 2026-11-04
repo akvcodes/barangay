@@ -402,8 +402,8 @@ namespace BarangayManagementSystem
                         _txtFirstName.Text = r["FirstName"]?.ToString() ?? "";
                         _txtMiddleName.Text = r["MiddleName"]?.ToString() ?? "";
                         _txtLastName.Text = r["LastName"]?.ToString() ?? "";
-                        _txtContact.Text = r["ContactNumber"]?.ToString() ?? "";
-                        _txtAddress.Text = r["Address"]?.ToString() ?? "";
+                        _txtContact.Text = DecryptForDisplay(r["ContactNumber"]);
+                        _txtAddress.Text = DecryptForDisplay(r["Address"]);
                         try { _txtOccupation.Text = r["Occupation"]?.ToString() ?? ""; } catch { }
 
                         if (r["DateOfBirth"] != DBNull.Value)
@@ -439,7 +439,7 @@ namespace BarangayManagementSystem
                         catch { _txtCitizenship.Text = "Filipino"; }
                         try { _txtHeight.Text = r["Height"]?.ToString() ?? ""; } catch { }
                         try { _txtWeight.Text = r["Weight"]?.ToString() ?? ""; } catch { }
-                        try { _txtTIN.Text = r["TIN"]?.ToString() ?? ""; } catch { }
+                        try { _txtTIN.Text = DecryptForDisplay(r["TIN"]); } catch { }
                         try { _txtICR.Text = r["ICRNumber"]?.ToString() ?? ""; } catch { }
 
                         if (r["Photo"] != DBNull.Value)
@@ -455,6 +455,25 @@ namespace BarangayManagementSystem
                     MessageBox.Show("Error: " + ex.Message, "Error",
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
+            }
+        }
+
+        private static string DecryptForDisplay(object value)
+        {
+            if (value == null || value == DBNull.Value)
+                return "";
+
+            string original = value.ToString();
+            if (string.IsNullOrEmpty(original))
+                return original;
+
+            try
+            {
+                return CryptoHelper.Decrypt(original, KeyManager.LoadKey());
+            }
+            catch (CryptoException)
+            {
+                return original;
             }
         }
 
@@ -564,8 +583,10 @@ namespace BarangayManagementSystem
             cmd.Parameters.AddWithValue("@dob", _dtpBirth.Value.Date);
             cmd.Parameters.AddWithValue("@g", _cboGender.SelectedItem?.ToString() ?? "Male");
             cmd.Parameters.AddWithValue("@cs", _cboCivilStatus.SelectedItem?.ToString() ?? "Single");
-            cmd.Parameters.AddWithValue("@c", _txtContact.Text.Trim());
-            cmd.Parameters.AddWithValue("@a", _txtAddress.Text.Trim());
+            string contactNumber = _txtContact.Text.Trim();
+            cmd.Parameters.AddWithValue("@c", string.IsNullOrEmpty(contactNumber) ? (object)contactNumber : CryptoHelper.Encrypt(contactNumber, KeyManager.GetOrCreateKey()));
+            string address = _txtAddress.Text.Trim();
+            cmd.Parameters.AddWithValue("@a", string.IsNullOrEmpty(address) ? (object)address : CryptoHelper.Encrypt(address, KeyManager.GetOrCreateKey()));
             cmd.Parameters.AddWithValue("@occ", _txtOccupation.Text.Trim());
             cmd.Parameters.AddWithValue("@ph", _photo != null ? (object)_photo : DBNull.Value);
 
@@ -580,7 +601,8 @@ namespace BarangayManagementSystem
             cmd.Parameters.AddWithValue("@cit", string.IsNullOrWhiteSpace(_txtCitizenship.Text) ? "Filipino" : _txtCitizenship.Text.Trim());
             cmd.Parameters.AddWithValue("@ht", string.IsNullOrWhiteSpace(_txtHeight.Text) ? (object)DBNull.Value : _txtHeight.Text.Trim());
             cmd.Parameters.AddWithValue("@wt", string.IsNullOrWhiteSpace(_txtWeight.Text) ? (object)DBNull.Value : _txtWeight.Text.Trim());
-            cmd.Parameters.AddWithValue("@tin", string.IsNullOrWhiteSpace(_txtTIN.Text) ? (object)DBNull.Value : _txtTIN.Text.Trim());
+            string tin = _txtTIN.Text.Trim();
+            cmd.Parameters.AddWithValue("@tin", string.IsNullOrWhiteSpace(tin) ? (object)DBNull.Value : CryptoHelper.Encrypt(tin, KeyManager.GetOrCreateKey()));
             cmd.Parameters.AddWithValue("@icr", string.IsNullOrWhiteSpace(_txtICR.Text) ? (object)DBNull.Value : _txtICR.Text.Trim());
         }
 

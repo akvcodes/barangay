@@ -23,6 +23,7 @@ namespace BarangayManagementSystem.Controls
         private readonly TabControl _tabs = new TabControl();
         private readonly SystemProfileEditor _profile = new SystemProfileEditor();
         private readonly DatabaseEditor _database = new DatabaseEditor();
+        private readonly AccountEditor _account = new AccountEditor();
         private readonly UsersControl _users = new UsersControl();
         private readonly UserTransactionLogsControl _logs = new UserTransactionLogsControl();
         private readonly BackupForm _backup = new BackupForm();
@@ -35,6 +36,12 @@ namespace BarangayManagementSystem.Controls
         public static SystemProfileData LoadSystemProfile()
         {
             return ProfileStore.Load();
+        }
+
+        public void ShowMyAccount()
+        {
+            _tabs.SelectedIndex = 2;
+            _segmentTabs.SelectedIndex = 2;
         }
 
         public SettingsHubControl()
@@ -54,12 +61,20 @@ namespace BarangayManagementSystem.Controls
             back.FlatAppearance.BorderColor = BorderCol;
             back.FlatAppearance.MouseOverBackColor = Color.FromArgb(244, 246, 253);
             back.Click += (s, e) => FindForm()?.Close();
+            var refresh = new Button { Text = "REFRESH", Anchor = AnchorStyles.Top | AnchorStyles.Right, Size = new Size(90, 34), FlatStyle = FlatStyle.Flat, ForeColor = NavBlue, BackColor = Color.White, Font = new Font("Segoe UI", 8.5f, FontStyle.Bold), Cursor = Cursors.Hand };
+            refresh.Location = new Point(top.Width - back.Width - refresh.Width - 30, 24);
+            refresh.FlatAppearance.BorderColor = BorderCol;
+            refresh.FlatAppearance.MouseOverBackColor = Color.FromArgb(244, 246, 253);
+            refresh.Click += (s, e) => RefreshCurrentSection();
             top.Controls.Add(title);
             top.Controls.Add(subtitle);
             top.Controls.Add(back);
-            top.Resize += (s, e) => back.Left = top.ClientSize.Width - back.Width - 20;
-            Controls.Add(top);
-
+            top.Controls.Add(refresh);
+            top.Resize += (s, e) =>
+            {
+                back.Left = top.ClientSize.Width - back.Width - 20;
+                refresh.Left = back.Left - refresh.Width - 10;
+            };
             _tabs.Dock = DockStyle.Fill;
             _tabs.Padding = new Point(0, 0);
             _tabs.BackColor = BgPage;
@@ -71,20 +86,39 @@ namespace BarangayManagementSystem.Controls
             _tabs.DrawItem += (s, e) => { };
             _tabs.TabPages.Add(MakeTab("Database connection", _database));
             _tabs.TabPages.Add(MakeTab("System profile", _profile));
-            _tabs.TabPages.Add(MakeTab("My account", new AccountEditor()));
+            _tabs.TabPages.Add(MakeTab("My account", _account));
             _tabs.TabPages.Add(MakeEmbeddedTab("User management", _users));
             _tabs.TabPages.Add(MakeEmbeddedTab("Backup", _backup));
             _tabs.TabPages.Add(MakeEmbeddedTab("User logs", _logs));
-            Controls.Add(_tabs);
+            var settingsHost = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = BgPage,
+                Padding = new Padding(16, 0, 16, 12)
+            };
+
             _segmentTabs.Dock = DockStyle.Top;
             _segmentTabs.Height = 62;
-            _segmentTabs.Margin = new Padding(18, 8, 18, 8);
+            _segmentTabs.Margin = new Padding(0, 8, 0, 8);
             _segmentTabs.SelectedIndexChanged += (s, e) => _tabs.SelectedIndex = _segmentTabs.SelectedIndex;
-            _tabs.SelectedIndexChanged += (s, e) => _segmentTabs.SelectedIndex = _tabs.SelectedIndex;
-            Controls.Add(_segmentTabs);
-            _segmentTabs.BringToFront();
-            _tabs.BringToFront();
-            _segmentTabs.BringToFront();
+            _tabs.SelectedIndexChanged += (s, e) => { _segmentTabs.SelectedIndex = _tabs.SelectedIndex; RefreshCurrentSection(); };
+
+            settingsHost.Controls.Add(_tabs);
+            settingsHost.Controls.Add(_segmentTabs);
+            Controls.Add(settingsHost);
+            Controls.Add(top);
+        }
+
+        private void RefreshCurrentSection()
+        {
+            switch (_tabs.SelectedIndex)
+            {
+                case 0: _database.RefreshData(); break;
+                case 1: _profile.RefreshData(); break;
+                case 2: _account.RefreshData(); break;
+                case 3: _users.RefreshData(); break;
+                case 5: _logs.RefreshData(); break;
+            }
         }
 
         private static TabPage MakeTab(string title, Control content)
@@ -116,8 +150,8 @@ namespace BarangayManagementSystem.Controls
             var button = new Button { Text = text, AutoSize = true, Height = 36, BackColor = secondary ? Color.White : color, ForeColor = secondary ? NavBlue : Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 9f, FontStyle.Bold), Padding = new Padding(14, 0, 14, 0), Cursor = Cursors.Hand };
             button.FlatAppearance.BorderColor = secondary ? BorderCol : color;
             button.FlatAppearance.BorderSize = secondary ? 1 : 0;
-            button.FlatAppearance.MouseOverBackColor = secondary ? Color.FromArgb(245, 247, 253) : ControlPaint.Light(color, 0.12f);
-            button.FlatAppearance.MouseDownBackColor = secondary ? Color.FromArgb(232, 236, 248) : ControlPaint.Dark(color, 0.1f);
+            button.FlatAppearance.MouseOverBackColor = secondary ? NavBlue : ControlPaint.Light(color, 0.12f);
+            button.FlatAppearance.MouseDownBackColor = secondary ? Color.FromArgb(18, 25, 94) : ControlPaint.Dark(color, 0.1f);
             button.Resize += (s, e) => RoundControl(button, 10);
             RoundControl(button, 10);
             return button;
@@ -180,15 +214,17 @@ namespace BarangayManagementSystem.Controls
             private byte[] _topLogoBytes;
             private byte[] _vendorLogoBytes;
             private string _backgroundPath;
+            private FlowLayoutPanel _scroll;
 
             public SystemProfileEditor()
             {
                 BackColor = BgPage;
-                var scroll = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(2), BackColor = BgPage };
+                _scroll = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(2), BackColor = BgPage };
+                var scroll = _scroll;
                 scroll.HorizontalScroll.Enabled = false;
                 scroll.HorizontalScroll.Visible = false;
                 scroll.Controls.Add(Header("Identity", "Keep the official system identity consistent across login and the main menu."));
-                var identity = Card(700, 178);
+                var identity = Card(700, 218);
                 StyleCard(identity);
                 AddField(identity, "System title", _title, 18, 18, 650);
                 AddField(identity, "Municipality / barangay", _municipality, 18, 70, 650);
@@ -221,11 +257,17 @@ namespace BarangayManagementSystem.Controls
                 Load += (s, e) => LoadProfile();
             }
 
-            private static TextBox Field() { var field = new TextBox { Height = 30, ForeColor = TextDark }; StyleField(field); return field; }
+            public void RefreshData()
+            {
+                _scroll.AutoScrollPosition = new Point(0, 0);
+                LoadProfile();
+            }
+
+            private static TextBox Field() { var field = new TextBox { Height = 32, ForeColor = TextDark }; StyleField(field); return field; }
             private static PictureBox Preview() => new PictureBox { Size = new Size(104, 104), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(232, 237, 248), BorderStyle = BorderStyle.FixedSingle };
             private static Panel Card(int width, int height) => new Panel { Width = width, Height = height, BackColor = Color.White, Margin = new Padding(0, 0, 0, 16) };
             private static Label Header(string title, string subtitle) => new Label { Text = title + Environment.NewLine + subtitle, AutoSize = false, Width = 700, Height = 48, ForeColor = NavBlue, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(0, 4, 0, 4) };
-            private static void AddField(Control parent, string label, TextBox field, int x, int y, int width) { parent.Controls.Add(new Label { Text = label, Location = new Point(x, y), AutoSize = true, ForeColor = TextGray }); field.Location = new Point(x, y + 20); field.Width = width; parent.Controls.Add(field); }
+            private static void AddField(Control parent, string label, TextBox field, int x, int y, int width) { parent.Controls.Add(new Label { Text = label, Location = new Point(x, y), AutoSize = true, ForeColor = TextGray }); field.Location = new Point(x, y + 21); field.Width = width; field.Height = 32; parent.Controls.Add(field); }
 
             private Panel UploadCard(string title, PictureBox preview, int assetType)
             {
@@ -257,10 +299,31 @@ namespace BarangayManagementSystem.Controls
             private void LoadProfile()
             {
                 var data = ProfileStore.Load(); _title.Text = data.SystemTitle; _municipality.Text = data.Municipality; _tagline.Text = data.Tagline; _backgroundPath = data.BackgroundPath;
-                if (!string.IsNullOrWhiteSpace(data.LogoPath) && File.Exists(data.LogoPath)) _logo.Image = Image.FromFile(data.LogoPath);
-                if (!string.IsNullOrWhiteSpace(data.BackgroundPath) && File.Exists(data.BackgroundPath)) _background.Image = Image.FromFile(data.BackgroundPath);
-                if (!string.IsNullOrWhiteSpace(data.TopLogoPath) && File.Exists(data.TopLogoPath)) _topLogo.Image = Image.FromFile(data.TopLogoPath);
-                if (!string.IsNullOrWhiteSpace(data.VendorLogoPath) && File.Exists(data.VendorLogoPath)) _vendorLogo.Image = Image.FromFile(data.VendorLogoPath);
+                SetPreviewImage(_logo, data.LogoPath, Properties.Resources.Screenshot_2026_04_09_152025_removebg_preview);
+                SetPreviewImage(_background, data.BackgroundPath, null);
+                SetPreviewImage(_topLogo, data.TopLogoPath, Properties.Resources._670410901_1461128808847271_3971153690831708275_n_removebg_preview4);
+                SetPreviewImage(_vendorLogo, data.VendorLogoPath, Properties.Resources._666490564_1453982712886852_4612032811985093738_n_removebg_preview2);
+            }
+
+            private static void SetPreviewImage(PictureBox preview, string path, Image fallback)
+            {
+                preview.Image?.Dispose();
+                preview.Image = null;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                    {
+                        using (var source = Image.FromFile(path)) preview.Image = new Bitmap(source);
+                    }
+                    else if (fallback != null)
+                    {
+                        preview.Image = new Bitmap(fallback);
+                    }
+                }
+                catch
+                {
+                    if (fallback != null) preview.Image = new Bitmap(fallback);
+                }
             }
 
             private void Upload(int assetType)
@@ -297,19 +360,179 @@ namespace BarangayManagementSystem.Controls
         {
             private readonly TextBox _newPassword = PasswordField();
             private readonly TextBox _confirmPassword = PasswordField();
+            private readonly TextBox _displayName = new TextBox();
+            private readonly PictureBox _avatar = new PictureBox();
+            private byte[] _photoBytes;
+            private readonly bool _canEditProfile = CurrentUser.IsSuperAdmin();
+
             public AccountEditor()
             {
-                BackColor = BgPage; var card = Card(700, 300); StyleCard(card); var avatar = new Label { Text = CurrentUser.Username.Length == 0 ? "?" : CurrentUser.Username.Substring(0, 1).ToUpperInvariant(), TextAlign = ContentAlignment.MiddleCenter, Location = new Point(20, 22), Size = new Size(64, 64), BackColor = NavBlue, ForeColor = Color.White, Font = new Font("Segoe UI", 24f, FontStyle.Bold) }; RoundControl(avatar, 32); card.Controls.Add(avatar);
-                card.Controls.Add(new Label { Text = CurrentUser.Username, Location = new Point(100, 26), AutoSize = true, ForeColor = NavBlue, Font = new Font("Segoe UI", 13f, FontStyle.Bold) }); card.Controls.Add(new Label { Text = CurrentUser.Role, Location = new Point(100, 56), AutoSize = true, ForeColor = TextGray });
-                AddField(card, "New password", _newPassword, 20, 112, 270); AddField(card, "Confirm new password", _confirmPassword, 20, 174, 270);
-                AddPasswordToggle(card, _newPassword, 296, 132);
-                AddPasswordToggle(card, _confirmPassword, 296, 194);
-                var strength = new Panel { Location = new Point(20, 166), Size = new Size(270, 4), BackColor = Color.FromArgb(226, 229, 238) };
+                EnsureProfileColumns();
+                BackColor = BgPage;
+                var card = Card(700, 380);
+                StyleCard(card);
+
+                _avatar.Location = new Point(20, 22);
+                _avatar.Size = new Size(64, 64);
+                _avatar.SizeMode = PictureBoxSizeMode.Zoom;
+                _avatar.BackColor = NavBlue;
+                RoundControl(_avatar, 32);
+                card.Controls.Add(_avatar);
+                card.Controls.Add(new Label { Text = CurrentUser.Username, Location = new Point(100, 26), AutoSize = true, ForeColor = NavBlue, Font = new Font("Segoe UI", 13f, FontStyle.Bold) });
+                card.Controls.Add(new Label { Text = CurrentUser.Role, Location = new Point(100, 56), AutoSize = true, ForeColor = TextGray });
+
+                AddField(card, "Display name", _displayName, 180, 86, 380);
+                _displayName.ReadOnly = !_canEditProfile;
+                StyleField(_displayName);
+                var upload = ActionButton("UPLOAD PHOTO", BtnBlue);
+                upload.Location = new Point(20, 96);
+                upload.Size = new Size(140, 30);
+                upload.Enabled = _canEditProfile;
+                upload.Click += UploadPhoto;
+                card.Controls.Add(upload);
+                var remove = ActionButton("REMOVE", Color.White);
+                remove.ForeColor = NavBlue;
+                remove.Location = new Point(20, 132);
+                remove.Size = new Size(140, 30);
+                remove.Enabled = _canEditProfile;
+                remove.Click += (s, e) => { _photoBytes = null; SetAvatar(null); };
+                card.Controls.Add(remove);
+
+                var profileHelp = new Label
+                {
+                    Text = _canEditProfile ? "SuperAdmin profile settings" : "Only SuperAdmin can edit the name or picture.",
+                    Location = new Point(180, 132),
+                    AutoSize = true,
+                    ForeColor = _canEditProfile ? BtnGreen : TextGray,
+                    Font = new Font("Segoe UI", 8.5f, FontStyle.Italic)
+                };
+                card.Controls.Add(profileHelp);
+                var saveProfile = ActionButton("SAVE PROFILE", BtnGreen);
+                saveProfile.Location = new Point(180, 164);
+                saveProfile.Enabled = _canEditProfile;
+                saveProfile.Click += SaveProfile;
+                card.Controls.Add(saveProfile);
+
+                AddField(card, "New password", _newPassword, 20, 204, 270); AddField(card, "Confirm new password", _confirmPassword, 20, 266, 270);
+                AddPasswordToggle(card, _newPassword, 296, 224);
+                AddPasswordToggle(card, _confirmPassword, 296, 286);
+                var strength = new Panel { Location = new Point(20, 258), Size = new Size(270, 4), BackColor = Color.FromArgb(226, 229, 238) };
                 var strengthFill = new Panel { Location = new Point(0, 0), Size = new Size(0, 4), BackColor = Color.FromArgb(192, 57, 43) };
                 strength.Controls.Add(strengthFill); _newPassword.TextChanged += (s, e) => UpdateStrength(strengthFill, _newPassword.Text);
                 card.Controls.Add(strength);
-                var save = ActionButton("CHANGE PASSWORD", NavBlue); save.Location = new Point(20, 236); save.Click += ChangePassword; card.Controls.Add(save); Controls.Add(card);
+                var save = ActionButton("CHANGE PASSWORD", NavBlue); save.Location = new Point(20, 328); save.Click += ChangePassword; card.Controls.Add(save); Controls.Add(card);
+                LoadProfile();
                 Resize += (s, e) => card.Width = Math.Max(700, ClientSize.Width - 8);
+            }
+
+            public void RefreshData()
+            {
+                LoadProfile();
+            }
+
+            private static void EnsureProfileColumns()
+            {
+                using (var conn = DatabaseConnection.GetConnection())
+                {
+                    if (conn == null) return;
+                    using (var check = new System.Data.SQLite.SQLiteCommand("PRAGMA table_info(users)", conn))
+                    using (var reader = check.ExecuteReader())
+                    {
+                        bool hasName = false, hasPhoto = false;
+                        while (reader.Read())
+                        {
+                            string name = reader["name"].ToString();
+                            hasName |= name.Equals("DisplayName", StringComparison.OrdinalIgnoreCase);
+                            hasPhoto |= name.Equals("Photo", StringComparison.OrdinalIgnoreCase);
+                        }
+                        if (!hasName) new System.Data.SQLite.SQLiteCommand("ALTER TABLE users ADD COLUMN DisplayName TEXT", conn).ExecuteNonQuery();
+                        if (!hasPhoto) new System.Data.SQLite.SQLiteCommand("ALTER TABLE users ADD COLUMN Photo BLOB", conn).ExecuteNonQuery();
+                    }
+                }
+            }
+
+            private void LoadProfile()
+            {
+                SetAvatar(null);
+                _displayName.Text = CurrentUser.Username;
+                using (var conn = DatabaseConnection.GetConnection())
+                using (var cmd = new System.Data.SQLite.SQLiteCommand("SELECT DisplayName, Photo FROM users WHERE idUsers=@id", conn))
+                {
+                    cmd.Parameters.AddWithValue("@id", CurrentUser.UserId);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (!reader.Read()) return;
+                        if (reader["DisplayName"] != DBNull.Value && !string.IsNullOrWhiteSpace(reader["DisplayName"].ToString()))
+                            _displayName.Text = reader["DisplayName"].ToString();
+                        if (reader["Photo"] != DBNull.Value)
+                        {
+                            _photoBytes = (byte[])reader["Photo"];
+                            SetAvatar(_photoBytes);
+                        }
+                        CurrentUser.DisplayName = _displayName.Text;
+                        CurrentUser.ProfilePhoto = _photoBytes;
+                    }
+                }
+            }
+
+            private void UploadPhoto(object sender, EventArgs e)
+            {
+                using (var dialog = new OpenFileDialog { Filter = "Image files|*.png;*.jpg;*.jpeg;*.bmp", Title = "Choose profile picture" })
+                {
+                    if (dialog.ShowDialog() != DialogResult.OK) return;
+                    _photoBytes = File.ReadAllBytes(dialog.FileName);
+                    SetAvatar(_photoBytes);
+                }
+            }
+
+            private void SetAvatar(byte[] bytes)
+            {
+                _avatar.Image?.Dispose();
+                _avatar.Image = null;
+                if (bytes != null)
+                {
+                    using (var stream = new MemoryStream(bytes))
+                    using (var image = Image.FromStream(stream))
+                        _avatar.Image = new Bitmap(image);
+                }
+                if (_avatar.Image == null)
+                {
+                    _avatar.Paint -= PaintAvatarInitial;
+                    _avatar.Paint += PaintAvatarInitial;
+                }
+                else
+                {
+                    _avatar.Paint -= PaintAvatarInitial;
+                    _avatar.Invalidate();
+                }
+            }
+
+            private void PaintAvatarInitial(object sender, PaintEventArgs e)
+            {
+                string initial = string.IsNullOrWhiteSpace(_displayName.Text) ? "?" : _displayName.Text.Substring(0, 1).ToUpperInvariant();
+                TextRenderer.DrawText(e.Graphics, initial, new Font("Segoe UI", 24f, FontStyle.Bold), _avatar.ClientRectangle, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            }
+
+            private void SaveProfile(object sender, EventArgs e)
+            {
+                if (!_canEditProfile) return;
+                using (var conn = DatabaseConnection.GetConnection())
+                using (var cmd = new System.Data.SQLite.SQLiteCommand("UPDATE users SET DisplayName=@name, Photo=@photo WHERE idUsers=@id", conn))
+                {
+                    cmd.Parameters.AddWithValue("@name", string.IsNullOrWhiteSpace(_displayName.Text) ? CurrentUser.Username : _displayName.Text.Trim());
+                    var photoParameter = cmd.Parameters.Add("@photo", System.Data.DbType.Binary);
+                    photoParameter.Value = (object)_photoBytes ?? DBNull.Value;
+                    cmd.Parameters.AddWithValue("@id", CurrentUser.UserId);
+                    if (cmd.ExecuteNonQuery() == 0)
+                    {
+                        MessageBox.Show("The profile could not be found in the current database.", "Profile Not Saved", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                }
+                CurrentUser.DisplayName = _displayName.Text.Trim();
+                CurrentUser.ProfilePhoto = _photoBytes;
+                CurrentUser.LoadProfile();
+                ThemedDialog.Show("Your profile changes were saved.", "Profile Saved", false);
             }
             private static TextBox PasswordField() { var field = new TextBox { Height = 30, PasswordChar = '●' }; StyleField(field); return field; }
             private static void AddPasswordToggle(Control parent, TextBox field, int x, int y)
@@ -349,6 +572,7 @@ namespace BarangayManagementSystem.Controls
             private readonly CredentialPanel _own;
             private readonly CredentialPanel _crs;
             private readonly CredentialPanel _ggms;
+            private readonly TableLayoutPanel _cards;
             private readonly Label _status = new Label { AutoSize = true, ForeColor = TextGray };
             private Button _lanPreset;
             private Button _onlinePreset;
@@ -357,30 +581,75 @@ namespace BarangayManagementSystem.Controls
                 BackColor = BgPage; var root = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(4, 8, 4, 16) };
                 var presets = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Padding = new Padding(4), BackColor = Color.White }; _lanPreset = ActionButton("NETWORK (LAN)", Color.White); _onlinePreset = ActionButton("REMOTE (ONLINE)", Color.White); _lanPreset.Margin = new Padding(0); _onlinePreset.Margin = new Padding(-1, 0, 0, 0); _lanPreset.Click += (s, e) => ApplyPreset(ActiveNetworkProfile.Lan); _onlinePreset.Click += (s, e) => ApplyPreset(ActiveNetworkProfile.Remote); presets.Controls.Add(_lanPreset); presets.Controls.Add(_onlinePreset); root.Controls.Add(presets); root.Controls.Add(new Label { Text = "Offline mode uses the built-in local database automatically - no configuration needed.", AutoSize = true, ForeColor = TextGray, Margin = new Padding(4, 8, 0, 14) });
                 _own = MakeCard("Own database", _config.ActiveOwnDb); _crs = MakeCard("CRS - read-only", _config.ActiveCrs); _ggms = MakeCard("GGMS - read + write", _config.ActiveGgms);
-                var cards = new TableLayoutPanel { Width = 1200, Height = 310, ColumnCount = 3, RowCount = 1, BackColor = BgPage, Margin = new Padding(0, 0, 0, 12), Padding = new Padding(0) };
-                cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f)); cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f)); cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.34f));
-                cards.Controls.Add(_own, 0, 0); cards.Controls.Add(_crs, 1, 0); cards.Controls.Add(_ggms, 2, 0);
-                root.Controls.Add(cards);
+                _cards = new TableLayoutPanel { Width = 1200, Height = 310, ColumnCount = 3, RowCount = 1, BackColor = BgPage, Margin = new Padding(0, 0, 0, 12), Padding = new Padding(0) };
+                _cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f)); _cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f)); _cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.34f));
+                _cards.Controls.Add(_own, 0, 0); _cards.Controls.Add(_crs, 1, 0); _cards.Controls.Add(_ggms, 2, 0);
+                root.Controls.Add(_cards);
                 ApplyPreset(_config.ActiveProfile);
-                var actions = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 4, 0, 0) }; var test = ActionButton("TEST CONNECTIONS", BtnBlue); var save = ActionButton("SAVE CONNECTION SETTINGS", BtnGreen); test.Click += Test; save.Click += Save; actions.Controls.Add(test); actions.Controls.Add(save); actions.Controls.Add(_status); root.Controls.Add(actions); Controls.Add(root);
+                var actions = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 4, 0, 0) }; var test = ActionButton("TEST CONNECTIONS", BtnBlue); var sync = ActionButton("UPDATE ONLINE SCHEMA", Color.FromArgb(100, 110, 128)); var save = ActionButton("SAVE CONNECTION SETTINGS", BtnGreen); test.Click += Test; sync.Click += SyncOnlineSchema; save.Click += Save; actions.Controls.Add(test); actions.Controls.Add(sync); actions.Controls.Add(save); actions.Controls.Add(_status); root.Controls.Add(actions); Controls.Add(root);
                 Resize += (s, e) =>
                 {
                     int width = Math.Max(700, ClientSize.Width - 12);
-                    cards.Width = width;
-                    _own.Width = Math.Max(300, width / 3 - 8);
-                    _crs.Width = Math.Max(300, width / 3 - 8);
-                    _ggms.Width = Math.Max(300, width / 3 - 8);
-                    cards.Height = 310;
+                    _cards.Width = width;
+                    UpdateCardLayout(_config.ActiveProfile == ActiveNetworkProfile.Lan, width);
+                    _cards.Height = 310;
                 };
+            }
+
+            public void RefreshData()
+            {
+                var latest = ExternalDbConfig.Load();
+                _own.LoadFrom(latest.ActiveOwnDb);
+                _crs.LoadFrom(latest.ActiveCrs);
+                _ggms.LoadFrom(latest.ActiveGgms);
+                ApplyPreset(latest.ActiveProfile);
             }
             private CredentialPanel MakeCard(string title, DbCredential credential) { var card = new CredentialPanel(title, credential) { Width = 390, Height = 292, BackColor = Color.White, ForeColor = NavBlue, Margin = new Padding(6) }; return card; }
             private void ApplyPreset(ActiveNetworkProfile profile)
             {
+                if (_own != null)
+                {
+                    CaptureVisibleCredentials();
+                    _config.Save();
+                }
                 _config.ActiveProfile = profile;
                 bool lan = profile == ActiveNetworkProfile.Lan;
                 SetPresetState(_lanPreset, lan);
                 SetPresetState(_onlinePreset, !lan);
-                _status.Text = lan ? "LAN selected; local fallback is active." : "Online selected; review each database card before saving.";
+                _own.LoadFrom(lan ? _config.OwnDb.Lan : _config.OwnDb.Remote);
+                _crs.LoadFrom(lan ? _config.Crs.Lan : _config.Crs.Remote);
+                _ggms.LoadFrom(lan ? _config.Ggms.Lan : _config.Ggms.Remote);
+                _own.SetTitle(lan ? "Own database" : "Online Connection (Cloud Database)");
+                UpdateCardLayout(lan, _cards.Width);
+                UpdateConnectionIndicator();
+            }
+
+            private void UpdateCardLayout(bool lan, int width)
+            {
+                _crs.Visible = lan;
+                _ggms.Visible = lan;
+                if (lan)
+                {
+                    _cards.ColumnStyles[0].SizeType = SizeType.Percent;
+                    _cards.ColumnStyles[0].Width = 33.33f;
+                    _cards.ColumnStyles[1].SizeType = SizeType.Percent;
+                    _cards.ColumnStyles[1].Width = 33.33f;
+                    _cards.ColumnStyles[2].SizeType = SizeType.Percent;
+                    _cards.ColumnStyles[2].Width = 33.34f;
+                    _own.Width = Math.Max(300, width / 3 - 8);
+                    _crs.Width = Math.Max(300, width / 3 - 8);
+                    _ggms.Width = Math.Max(300, width / 3 - 8);
+                }
+                else
+                {
+                    _cards.ColumnStyles[0].SizeType = SizeType.Percent;
+                    _cards.ColumnStyles[0].Width = 100;
+                    _cards.ColumnStyles[1].SizeType = SizeType.Absolute;
+                    _cards.ColumnStyles[1].Width = 0;
+                    _cards.ColumnStyles[2].SizeType = SizeType.Absolute;
+                    _cards.ColumnStyles[2].Width = 0;
+                    _own.Width = Math.Max(300, width - 12);
+                }
             }
 
             private static void SetPresetState(Button button, bool active)
@@ -388,9 +657,93 @@ namespace BarangayManagementSystem.Controls
                 button.BackColor = active ? NavBlue : Color.White;
                 button.ForeColor = active ? Color.White : NavBlue;
                 button.FlatAppearance.BorderColor = active ? NavBlue : BorderCol;
+                button.FlatAppearance.MouseOverBackColor = active ? Color.FromArgb(18, 25, 94) : Color.FromArgb(245, 247, 253);
+                button.FlatAppearance.MouseDownBackColor = active ? Color.FromArgb(12, 18, 72) : Color.FromArgb(232, 236, 248);
             }
-            private void Save(object sender, EventArgs e) { _config.OwnDb.Remote = _own.ToCredential(); _config.Crs.Remote = _crs.ToCredential(); _config.Ggms.Remote = _ggms.ToCredential(); _config.Save(); _status.Text = "Connection settings saved."; }
-            private void Test(object sender, EventArgs e) { using (var conn = DatabaseConnection.GetConnection()) _status.Text = conn == null ? "Own database: disconnected." : "Own database: connected. CRS/GGMS are tested by their integration services."; }
+            private void Save(object sender, EventArgs e)
+            {
+                CaptureVisibleCredentials();
+                if (_config.ActiveProfile == ActiveNetworkProfile.Lan)
+                {
+                    _config.OwnDb.Lan = _own.ToCredential();
+                    _config.Crs.Lan = _crs.ToCredential();
+                    _config.Ggms.Lan = _ggms.ToCredential();
+                }
+                else
+                {
+                    _config.OwnDb.Remote = _own.ToCredential();
+                }
+                _config.Save();
+                UpdateConnectionIndicator("Connection settings saved.");
+            }
+            private void Test(object sender, EventArgs e)
+            {
+                CaptureVisibleCredentials();
+                _config.Save();
+                if (_config.ActiveProfile == ActiveNetworkProfile.Remote)
+                {
+                    try
+                    {
+                        using (var conn = new MySqlConnector.MySqlConnection(_config.OwnDb.Remote.ToConnectionString()))
+                        {
+                            conn.Open();
+                            UpdateConnectionIndicator("Online connection is active.");
+                        }
+                    }
+                    catch (Exception ex) { UpdateConnectionIndicator("Online connection failed: " + ex.Message); }
+                    return;
+                }
+
+                using (var conn = DatabaseConnection.GetConnection())
+                    UpdateConnectionIndicator(conn == null ? "Local database is disconnected." : "Local SQLite connection is active.");
+            }
+
+            private void CaptureVisibleCredentials()
+            {
+                if (_config.ActiveProfile == ActiveNetworkProfile.Lan)
+                {
+                    _config.OwnDb.Lan = _own.ToCredential();
+                    _config.Crs.Lan = _crs.ToCredential();
+                    _config.Ggms.Lan = _ggms.ToCredential();
+                }
+                else
+                {
+                    _config.OwnDb.Remote = _own.ToCredential();
+                }
+            }
+
+            private void UpdateConnectionIndicator(string message = null)
+            {
+                var credential = _config.ActiveProfile == ActiveNetworkProfile.Lan ? _config.OwnDb.Lan : _config.OwnDb.Remote;
+                var mode = _config.ActiveProfile == ActiveNetworkProfile.Lan ? "LAN" : "REMOTE ONLINE";
+                var endpoint = credential.IsFilledIn() ? credential.Host + ":" + credential.Port + " / " + credential.Database : "not configured";
+                _status.Text = (message ?? "") + (string.IsNullOrWhiteSpace(message) ? "" : "  |  ") + "CURRENT CONNECTION: " + mode + "  |  " + endpoint;
+            }
+            private void SyncOnlineSchema(object sender, EventArgs e)
+            {
+                if (_config.ActiveProfile != ActiveNetworkProfile.Remote)
+                {
+                    MessageBox.Show("Select REMOTE (ONLINE) first, then save the Hostinger connection settings.", "Online Schema", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (MessageBox.Show("This will create missing tables and add missing columns to the online database. Existing online data and columns will not be deleted. Continue?", "Update Online Schema", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    return;
+
+                try
+                {
+                    CaptureVisibleCredentials();
+                    _config.Save();
+                    var result = RemoteSchemaSynchronizer.Synchronize(_config.ActiveOwnDb);
+                    UpdateConnectionIndicator("Online schema updated.");
+                    MessageBox.Show(result.ToMessage(), "Online Schema", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    _status.Text = "Online schema update failed.";
+                    MessageBox.Show("The online schema could not be updated.\n\n" + ex.Message, "Online Schema", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
         }
 
         private sealed class SegmentedSettingsTabs : UserControl

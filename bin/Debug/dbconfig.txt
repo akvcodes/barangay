@@ -1,5 +1,0 @@
-Server=srv1237.hstgr.io
-Database=u621755393_BaManSys
-Username=u621755393_BaManSys
-Password=BaManSys01
-Port=3306

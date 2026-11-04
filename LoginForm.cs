@@ -18,11 +18,8 @@ namespace BarangayManagementSystem
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "BarangaySystem", "config.txt");
 
-        // ── Settings panel controls ───────────────────────────────────────────
+        // ── Login connection-settings action ─────────────────────────────────
         private Button _btnSettings;
-        private Panel _settingsPanel;
-        private RadioButton _rbLocal2, _rbRemote2, _rbOnline2;
-        private Label _lblStatus2;
 
         public LoginForm()
         {
@@ -30,6 +27,7 @@ namespace BarangayManagementSystem
             txtPassword.PasswordChar = '●';
             txtUsername.Focus();
             BuildSettingsPanel();
+            ApplyLoginLayout();
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -39,194 +37,98 @@ namespace BarangayManagementSystem
         {
             // Settings button
             _btnSettings = new Button();
-            _btnSettings.Text = "Settings";
-            _btnSettings.Font = new Font("Segoe UI", 8.5f, FontStyle.Regular);
+            _btnSettings.Text = "CONNECTION SETTINGS";
+            _btnSettings.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
             _btnSettings.ForeColor = Color.FromArgb(44, 62, 80);
-            _btnSettings.BackColor = Color.FromArgb(240, 242, 250);
+            _btnSettings.BackColor = Color.White;
             _btnSettings.FlatStyle = FlatStyle.Flat;
             _btnSettings.Cursor = Cursors.Hand;
-            _btnSettings.Size = new Size(74, 26);
-            _btnSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            _btnSettings.Size = new Size(378, 38);
+            _btnSettings.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             _btnSettings.TabStop = false;
             _btnSettings.FlatAppearance.BorderSize = 1;
             _btnSettings.FlatAppearance.BorderColor = Color.FromArgb(200, 205, 225);
-            _btnSettings.FlatAppearance.MouseOverBackColor = Color.FromArgb(220, 224, 245);
-            _btnSettings.FlatAppearance.MouseDownBackColor = Color.FromArgb(200, 208, 240);
+            _btnSettings.FlatAppearance.MouseOverBackColor = Color.FromArgb(232, 235, 248);
+            _btnSettings.FlatAppearance.MouseDownBackColor = Color.FromArgb(215, 220, 240);
             _btnSettings.Click += new EventHandler(BtnSettings_Click);
             panelRight.Controls.Add(_btnSettings);
+
             PositionSettingsBtn();
             _btnSettings.BringToFront();
 
-            // Settings panel
-            _settingsPanel = new Panel();
-            _settingsPanel.Size = new Size(220, 200);
-            _settingsPanel.BackColor = Color.FromArgb(250, 251, 255);
-            _settingsPanel.BorderStyle = BorderStyle.FixedSingle;
-            _settingsPanel.Visible = false;
-            _settingsPanel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-
-            // Section: Connection Type
-            Label lblConnSection = new Label();
-            lblConnSection.Text = "CONNECTION TYPE";
-            lblConnSection.Font = new Font("Segoe UI", 7f, FontStyle.Bold);
-            lblConnSection.ForeColor = Color.FromArgb(26, 35, 126);
-            lblConnSection.BackColor = Color.FromArgb(235, 238, 255);
-            lblConnSection.Location = new Point(0, 0);
-            lblConnSection.Size = new Size(220, 22);
-            lblConnSection.TextAlign = ContentAlignment.MiddleLeft;
-            lblConnSection.Padding = new Padding(10, 0, 0, 0);
-
-            _rbLocal2 = MakeRadio("Local", new Point(14, 28));
-            _rbRemote2 = MakeRadio("Remote", new Point(14, 52));
-            _rbOnline2 = MakeRadio("Online", new Point(14, 76));
-
-            _rbLocal2.CheckedChanged += new EventHandler(RbConn_Changed);
-            _rbRemote2.CheckedChanged += new EventHandler(RbConn_Changed);
-            _rbOnline2.CheckedChanged += new EventHandler(RbConn_Changed);
-
-            _lblStatus2 = new Label();
-            _lblStatus2.Text = "";
-            _lblStatus2.Font = new Font("Segoe UI", 7.5f, FontStyle.Italic);
-            _lblStatus2.ForeColor = Color.FromArgb(100, 110, 140);
-            _lblStatus2.Location = new Point(14, 102);
-            _lblStatus2.Size = new Size(192, 18);
-            _lblStatus2.BackColor = Color.Transparent;
-
-            // Divider
-            Panel divider = new Panel();
-            divider.BackColor = Color.FromArgb(210, 215, 235);
-            divider.Location = new Point(0, 126);
-            divider.Size = new Size(220, 1);
-
-            // Section: Application
-            Label lblAppSection = new Label();
-            lblAppSection.Text = "APPLICATION";
-            lblAppSection.Font = new Font("Segoe UI", 7f, FontStyle.Bold);
-            lblAppSection.ForeColor = Color.FromArgb(26, 35, 126);
-            lblAppSection.BackColor = Color.FromArgb(235, 238, 255);
-            lblAppSection.Location = new Point(0, 128);
-            lblAppSection.Size = new Size(220, 22);
-            lblAppSection.TextAlign = ContentAlignment.MiddleLeft;
-            lblAppSection.Padding = new Padding(10, 0, 0, 0);
-
-            Button btnExitApp = new Button();
-            btnExitApp.Text = "Exit Application";
-            btnExitApp.Font = new Font("Segoe UI", 9f, FontStyle.Regular);
-            btnExitApp.ForeColor = Color.FromArgb(180, 35, 35);
-            btnExitApp.BackColor = Color.Transparent;
-            btnExitApp.FlatStyle = FlatStyle.Flat;
-            btnExitApp.Cursor = Cursors.Hand;
-            btnExitApp.Location = new Point(10, 156);
-            btnExitApp.Size = new Size(198, 30);
-            btnExitApp.TextAlign = ContentAlignment.MiddleLeft;
-            btnExitApp.FlatAppearance.BorderSize = 0;
-            btnExitApp.FlatAppearance.MouseOverBackColor = Color.FromArgb(255, 235, 235);
-            btnExitApp.Click += new EventHandler(BtnExitApp_Click);
-
-            _settingsPanel.Controls.Add(lblConnSection);
-            _settingsPanel.Controls.Add(_rbLocal2);
-            _settingsPanel.Controls.Add(_rbRemote2);
-            _settingsPanel.Controls.Add(_rbOnline2);
-            _settingsPanel.Controls.Add(_lblStatus2);
-            _settingsPanel.Controls.Add(divider);
-            _settingsPanel.Controls.Add(lblAppSection);
-            _settingsPanel.Controls.Add(btnExitApp);
-
-            panelRight.Controls.Add(_settingsPanel);
-            _settingsPanel.BringToFront();
-
-            this.MouseDown += new MouseEventHandler(Form_MouseDown);
-            panelLeft.MouseDown += new MouseEventHandler(PanelLeft_MouseDown);
             panelRight.Resize += new EventHandler(PanelRight_Resize);
-        }
-
-        // ── Named event handlers ──────────────────────────────────────────────
-        private void Form_MouseDown(object sender, MouseEventArgs e)
-        {
-            HideSettings();
-        }
-
-        private void PanelLeft_MouseDown(object sender, MouseEventArgs e)
-        {
-            HideSettings();
         }
 
         private void PanelRight_Resize(object sender, EventArgs e)
         {
             PositionSettingsBtn();
-            PositionSettingsPanel();
-        }
-
-        private RadioButton MakeRadio(string text, Point loc)
-        {
-            RadioButton rb = new RadioButton();
-            rb.Text = text;
-            rb.Font = new Font("Segoe UI", 9.5f);
-            rb.ForeColor = Color.FromArgb(44, 55, 90);
-            rb.Location = loc;
-            rb.Size = new Size(192, 22);
-            rb.BackColor = Color.Transparent;
-            rb.Cursor = Cursors.Hand;
-            return rb;
-        }
-
-        private void RbConn_Changed(object sender, EventArgs e)
-        {
-            if (_rbLocal2.Checked)
-            {
-                ApplyConnection("Local");
-                SyncMainRadios();
-            }
-            else if (_rbRemote2.Checked)
-            {
-                ApplyConnection("Remote");
-                SyncMainRadios();
-            }
-            else if (_rbOnline2.Checked)
-            {
-                ApplyConnection("Online");
-                SyncMainRadios();
-            }
-        }
-
-        private void BtnExitApp_Click(object sender, EventArgs e)
-        {
-            if (MessageBox.Show("Are you sure you want to exit?", "Exit Application",
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-            {
-                Application.Exit();
-            }
+            ApplyLoginLayout();
         }
 
         private void PositionSettingsBtn()
         {
             if (_btnSettings == null || panelRight == null) return;
-            _btnSettings.Location = new Point(panelRight.Width - 82, 8);
+            int width = Math.Min(360, panelRight.ClientSize.Width - 64);
+            _btnSettings.Size = new Size(width, 38);
+            _btnSettings.Location = new Point(
+                (panelRight.ClientSize.Width - width) / 2,
+                panelRight.ClientSize.Height - 91);
         }
 
-        private void PositionSettingsPanel()
+        private void ApplyLoginLayout()
         {
-            if (_settingsPanel == null || panelRight == null) return;
-            _settingsPanel.Location = new Point(
-                panelRight.Width - _settingsPanel.Width - 4, 38);
+            if (panelRight == null || panelLeft == null || panelRight.ClientSize.Width < 1) return;
+
+            int panelWidth = Math.Max(360, Math.Min(500, (int)(ClientSize.Width * 0.30f)));
+            panelRight.Width = panelWidth;
+            int formWidth = Math.Max(260, Math.Min(360, panelRight.ClientSize.Width - 96));
+            int formLeft = (panelRight.ClientSize.Width - formWidth) / 2;
+            int height = panelRight.ClientSize.Height;
+            int top = Math.Max(120, (height - 448) / 2);
+            int logoSize = Math.Max(88, Math.Min(130, panelRight.ClientSize.Width / 4));
+
+            int panelCenter = panelRight.ClientSize.Width / 2;
+            pictureBoxLogo.Location = new Point(panelCenter - (logoSize / 2), top);
+            pictureBoxLogo.Size = new Size(logoSize, (int)(logoSize * 0.86f));
+
+            lblSystemTitle.Location = new Point(0, top + 108);
+            lblSystemTitle.Size = new Size(panelRight.ClientSize.Width, 30);
+            lblSystemSub.Location = new Point(0, top + 142);
+            lblSystemSub.Size = new Size(panelRight.ClientSize.Width, 22);
+
+            label4.Location = new Point(formLeft, top + 162);
+            label4.Size = new Size(formWidth, 22);
+            txtUsername.Location = new Point(formLeft, top + 186);
+            txtUsername.Size = new Size(formWidth, 32);
+            label5.Location = new Point(formLeft, top + 216);
+            label5.Size = new Size(formWidth, 22);
+            txtPassword.Location = new Point(formLeft, top + 240);
+            txtPassword.Size = new Size(formWidth, 32);
+            chkShowPassword.Location = new Point(formLeft, top + 282);
+            btnLogin.Location = new Point(formLeft, top + 318);
+            btnLogin.Size = new Size(formWidth, 40);
+            lblMessage.Location = new Point(formLeft, top + 366);
+            lblMessage.Size = new Size(formWidth, 22);
+
+            int leftPanelWidth = Math.Max(1, panelRight.Left);
+            int sealSize = Math.Max(190, Math.Min(310, leftPanelWidth / 4));
+            local_government_logo.Location = new Point(
+                Math.Max(0, (leftPanelWidth - sealSize) / 2),
+                Math.Max(80, (panelLeft.ClientSize.Height - 620) / 2));
+            local_government_logo.Size = new Size(sealSize, (int)(sealSize * 0.91f));
+            lblLGUName.Location = new Point(0, local_government_logo.Bottom + 20);
+            lblLGUName.Size = new Size(leftPanelWidth, 58);
+            lblLGUAddress.Location = new Point(0, lblLGUName.Bottom + 4);
+            lblLGUAddress.Size = new Size(leftPanelWidth, 36);
+
+            PositionSettingsBtn();
+            lblClose.Location = new Point(panelRight.ClientSize.Width - 40, 8);
         }
 
         private void BtnSettings_Click(object sender, EventArgs e)
         {
-            if (_settingsPanel.Visible)
-            {
-                HideSettings();
-                return;
-            }
-            PositionSettingsPanel();
-            _settingsPanel.BringToFront();
-            _settingsPanel.Visible = true;
-        }
-
-        private void HideSettings()
-        {
-            if (_settingsPanel != null)
-                _settingsPanel.Visible = false;
+            using (var settings = new Integration.ConnectionSettingsEditForm())
+                settings.ShowDialog(this);
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -235,7 +137,6 @@ namespace BarangayManagementSystem
         private void LoginForm_Load(object sender, EventArgs e)
         {
             txtUsername.Select();
-            LoadSavedConnection();
 
             _rbLocal.Visible = false;
             _rbRemote.Visible = false;
@@ -247,31 +148,6 @@ namespace BarangayManagementSystem
         // ══════════════════════════════════════════════════════════════════════
         //  CONNECTION SELECTOR
         // ══════════════════════════════════════════════════════════════════════
-        private void LoadSavedConnection()
-        {
-            string connType = "Online";
-            if (File.Exists(CONFIG_FILE))
-            {
-                try
-                {
-                    foreach (string line in File.ReadAllLines(CONFIG_FILE))
-                    {
-                        int eq = line.IndexOf('=');
-                        if (eq < 0) continue;
-                        if (line.Substring(0, eq).Trim() == "ConnectionType")
-                            connType = line.Substring(eq + 1).Trim();
-                    }
-                }
-                catch { }
-            }
-            switch (connType)
-            {
-                case "Local": _rbLocal2.Checked = true; break;
-                case "Remote": _rbRemote2.Checked = true; break;
-                default: _rbOnline2.Checked = true; break;
-            }
-        }
-
         private void rbLocal_CheckedChanged(object sender, EventArgs e)
         {
             if (_rbLocal.Checked) ApplyConnection("Local");
@@ -314,11 +190,6 @@ namespace BarangayManagementSystem
         {
             _lblConnStatus.Text = text;
             _lblConnStatus.ForeColor = color;
-            if (_lblStatus2 != null)
-            {
-                _lblStatus2.Text = text;
-                _lblStatus2.ForeColor = color;
-            }
         }
 
         private void SaveConnectionType(string type)
@@ -344,13 +215,6 @@ namespace BarangayManagementSystem
                 File.WriteAllLines(CONFIG_FILE, lines);
             }
             catch { }
-        }
-
-        private void SyncMainRadios()
-        {
-            _rbLocal.Checked = _rbLocal2.Checked;
-            _rbRemote.Checked = _rbRemote2.Checked;
-            _rbOnline.Checked = _rbOnline2.Checked;
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -394,12 +258,12 @@ namespace BarangayManagementSystem
                                 string role = reader["Role"].ToString();
 
                                 CurrentUser.Login(userId, uname, role);
+                                CurrentUser.LoadProfile();
 
-                                MessageBox.Show(
+                                ThemedDialog.Show(
                                     "Welcome, " + uname + "!\nRole: " + role,
                                     "Login Successful",
-                                    MessageBoxButtons.OK,
-                                    MessageBoxIcon.Information);
+                                    false);
 
                                 this.Hide();
                                 new MainMenuForm().Show();

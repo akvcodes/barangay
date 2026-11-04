@@ -12,6 +12,7 @@ using System;
 using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows.Forms;
@@ -51,6 +52,8 @@ namespace BarangayManagementSystem.Controls
         private ComboBox _cboRole;
         private ComboBox _cboStatus;
         private Label _lblRoleInfo;
+        private PictureBox _photoPreview;
+        private byte[] _photoBytes;
         private Button _btnSave;
         private Panel _topBar;
 
@@ -60,6 +63,8 @@ namespace BarangayManagementSystem.Controls
             this.DoubleBuffered = true;
             this.BackColor = BgPage;
             this.Dock = DockStyle.Fill;
+
+            EnsureProfileColumns();
 
             BuildListView();
             BuildFormView();
@@ -218,8 +223,14 @@ namespace BarangayManagementSystem.Controls
             btnSearch.Click += (s, e) => SearchUsers();
             searchCard.Controls.Add(btnSearch);
 
+            var btnRefresh = MakeBtn("⟳  Refresh", BtnGray, 9.5f);
+            btnRefresh.Location = new Point(524, 15);
+            btnRefresh.Size = new Size(112, 32);
+            btnRefresh.Click += (s, e) => LoadUsers(_txtSearch.Text.Trim());
+            searchCard.Controls.Add(btnRefresh);
+
             var btnAdd = MakeBtn("+ Add New User", BtnGreen, 9.5f);
-            btnAdd.Location = new Point(524, 15);
+            btnAdd.Location = new Point(644, 15);
             btnAdd.Size = new Size(170, 32);
             btnAdd.Click += (s, e) => ShowForm(false);
             searchCard.Controls.Add(btnAdd);
@@ -270,7 +281,7 @@ namespace BarangayManagementSystem.Controls
             _formPanel.Controls.Add(btnBack);
 
             // Form card — tall enough for all fields
-            var card = MakeCard(new Point(0, 50), new Size(200, 500));
+            var card = MakeCard(new Point(0, 50), new Size(200, 600));
             _formPanel.Controls.Add(card);
 
             // Title
@@ -349,6 +360,28 @@ namespace BarangayManagementSystem.Controls
             _cboStatus.SelectedIndex = 0;
             card.Controls.Add(_cboStatus);
             y += rowH;
+
+            card.Controls.Add(FormLabel("Profile photo", rx, y));
+            _photoPreview = new PictureBox
+            {
+                Location = new Point(rx, y + 20),
+                Size = new Size(96, 96),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BackColor = LightBlue,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            card.Controls.Add(_photoPreview);
+            var uploadPhoto = MakeBtn("Upload", BtnBlue, 9f);
+            uploadPhoto.Location = new Point(rx + 108, y + 20);
+            uploadPhoto.Size = new Size(100, 32);
+            uploadPhoto.Click += (s, e) => UploadPhoto();
+            card.Controls.Add(uploadPhoto);
+            var removePhoto = MakeBtn("Remove", BtnGray, 9f);
+            removePhoto.Location = new Point(rx + 108, y + 58);
+            removePhoto.Size = new Size(100, 32);
+            removePhoto.Click += (s, e) => { _photoBytes = null; SetPhotoPreview(null); };
+            card.Controls.Add(removePhoto);
+            y += 120;
 
             // ── Row 3: Confirm Password ───────────────────────────────────────
             card.Controls.Add(FormLabel("Confirm Password", lx, y));
@@ -587,6 +620,7 @@ namespace BarangayManagementSystem.Controls
                             ? "Active" : "Inactive";
                     }
                     r.Close();
+                    LoadPhotoForUser(id);
                     _txtPassword.Clear();
                     _txtConfirmPassword.Clear();
                     UpdateRoleInfo();
@@ -664,13 +698,14 @@ namespace BarangayManagementSystem.Controls
                 try
                 {
                     var cmd = new SQLiteCommand(@"
-                        INSERT INTO users (Username, Password, Role, IsActive)
-                        VALUES (@u, MD5(@p), @r, @a)", conn);
+                        INSERT INTO users (Username, Password, Role, IsActive, Photo)
+                        VALUES (@u, MD5(@p), @r, @a, @photo)", conn);
                     cmd.Parameters.AddWithValue("@u", _txtUsername.Text.Trim());
                     cmd.Parameters.AddWithValue("@p", _txtPassword.Text);
                     cmd.Parameters.AddWithValue("@r", _cboRole.SelectedItem.ToString());
                     cmd.Parameters.AddWithValue("@a",
                         _cboStatus.SelectedItem.ToString() == "Active" ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@photo", (object)_photoBytes ?? DBNull.Value);
 
                     if (cmd.ExecuteNonQuery() > 0)
                     {
@@ -699,8 +734,8 @@ namespace BarangayManagementSystem.Controls
                 try
                 {
                     string q = changingPassword
-                        ? "UPDATE users SET Password=MD5(@p), Role=@r, IsActive=@a WHERE idUsers=@id"
-                        : "UPDATE users SET Role=@r, IsActive=@a WHERE idUsers=@id";
+                        ? "UPDATE users SET Password=MD5(@p), Role=@r, IsActive=@a, Photo=@photo WHERE idUsers=@id"
+                        : "UPDATE users SET Role=@r, IsActive=@a, Photo=@photo WHERE idUsers=@id";
 
                     var cmd = new SQLiteCommand(q, conn);
                     if (changingPassword)
@@ -708,6 +743,7 @@ namespace BarangayManagementSystem.Controls
                     cmd.Parameters.AddWithValue("@r", _cboRole.SelectedItem.ToString());
                     cmd.Parameters.AddWithValue("@a",
                         _cboStatus.SelectedItem.ToString() == "Active" ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@photo", (object)_photoBytes ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@id", _selectedUserId);
 
                     if (cmd.ExecuteNonQuery() > 0)
@@ -722,6 +758,55 @@ namespace BarangayManagementSystem.Controls
                     MessageBox.Show("Error updating user:\n" + ex.Message,
                         "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
+            }
+        }
+
+        private void LoadPhotoForUser(int id)
+        {
+            _photoBytes = null;
+            SetPhotoPreview(null);
+            using (var conn = DatabaseConnection.GetConnection())
+            using (var cmd = new SQLiteCommand("SELECT Photo FROM users WHERE idUsers=@id", conn))
+            {
+                cmd.Parameters.AddWithValue("@id", id);
+                object value = cmd.ExecuteScalar();
+                if (value != null && value != DBNull.Value)
+                {
+                    _photoBytes = (byte[])value;
+                    SetPhotoPreview(_photoBytes);
+                }
+            }
+        }
+
+        private void UploadPhoto()
+        {
+            using (var dialog = new OpenFileDialog { Filter = "Image files|*.png;*.jpg;*.jpeg;*.bmp", Title = "Choose profile picture" })
+            {
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+                _photoBytes = File.ReadAllBytes(dialog.FileName);
+                SetPhotoPreview(_photoBytes);
+            }
+        }
+
+        private void SetPhotoPreview(byte[] bytes)
+        {
+            _photoPreview.Image?.Dispose();
+            _photoPreview.Image = null;
+            if (bytes == null) return;
+            using (var stream = new MemoryStream(bytes))
+            using (var image = Image.FromStream(stream))
+                _photoPreview.Image = new Bitmap(image);
+        }
+
+        private static void EnsureProfileColumns()
+        {
+            using (var conn = DatabaseConnection.GetConnection())
+            using (var check = new SQLiteCommand("PRAGMA table_info(users)", conn))
+            using (var reader = check.ExecuteReader())
+            {
+                bool hasPhoto = false;
+                while (reader.Read()) hasPhoto |= reader["name"].ToString().Equals("Photo", StringComparison.OrdinalIgnoreCase);
+                if (!hasPhoto) new SQLiteCommand("ALTER TABLE users ADD COLUMN Photo BLOB", conn).ExecuteNonQuery();
             }
         }
 
@@ -771,6 +856,8 @@ namespace BarangayManagementSystem.Controls
 
         private void ClearForm()
         {
+            _photoBytes = null;
+            SetPhotoPreview(null);
             _txtUsername.Text = "";
             _txtUsername.ReadOnly = false;
             _txtUsername.BackColor = Color.White;
