@@ -1471,7 +1471,7 @@ namespace BarangayManagementSystem.Controls
                 case "Certificate": return ct + order;
                 case "Blotter": return bl + order;
                 case "Ayuda": return ay + order;
-                default: return $"({cl}) UNION ALL ({ct}) UNION ALL ({bl}) UNION ALL ({ay})" + order;
+                default: return $"{cl} UNION ALL {ct} UNION ALL {bl} UNION ALL {ay}" + order;
             }
         }
 
