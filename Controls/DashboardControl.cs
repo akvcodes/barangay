@@ -5,6 +5,7 @@ using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using System.Threading.Tasks;
 
 namespace BarangayManagementSystem.Controls
 {
@@ -52,6 +53,7 @@ namespace BarangayManagementSystem.Controls
         private Panel _actCard;
         private Panel _chartCard;
         private Panel _statusCard;
+        private bool _loadingDashboard;
 
         // ── Colors ────────────────────────────────────────────────────────────
         private readonly Color BgPage = Color.FromArgb(240, 242, 248);
@@ -81,13 +83,10 @@ namespace BarangayManagementSystem.Controls
             BuildUI();
         }
 
-        protected override void OnLoad(EventArgs e)
+        protected override async void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            LoadBarangayInfo();
-            LoadDashboardStatistics();
-            LoadMonthlyData();
-            LoadRecentActivities();
+            await RefreshDashboardAsync();
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -655,207 +654,204 @@ namespace BarangayManagementSystem.Controls
 
         }
 
-        // ═════════════════════════════════════════════════════════════════════
-        //  DATA LOADERS
-        // ═════════════════════════════════════════════════════════════════════
-        private void LoadBarangayInfo()
+        private sealed class DashboardSnapshot
         {
-            SQLiteConnection conn = DatabaseConnection.GetConnection();
-            if (conn == null) return;
-            using (conn)
+            public string BarangayName;
+            public string BarangayAddress;
+            public int TotalResidents;
+            public int TotalOfficials;
+            public int ActiveUsers;
+            public int PendingBlotters;
+            public int PendingClearances;
+            public decimal TotalAyuda;
+            public int TotalClearances;
+            public int IssuedClearances;
+            public int TotalBlotters;
+            public int ResolvedBlotters;
+            public int[] ClearanceByMonth = new int[6];
+            public int[] CertificatesByMonth = new int[6];
+            public int[] BlottersByMonth = new int[6];
+            public DataTable RecentActivities = new DataTable();
+        }
+
+        private async Task RefreshDashboardAsync()
+        {
+            if (_loadingDashboard) return;
+            _loadingDashboard = true;
+            LoadingOverlay.ShowLoading(this);
+            try
             {
-                try
+                DashboardSnapshot snapshot = await Task.Run(LoadDashboardSnapshot);
+                if (snapshot == null) return;
+                ApplyDashboardSnapshot(snapshot);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error loading analytics dashboard:\n" + ex.Message,
+                    "Dashboard Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                LoadingOverlay.HideLoading(this);
+                _loadingDashboard = false;
+            }
+        }
+
+        private static DashboardSnapshot LoadDashboardSnapshot()
+        {
+            using (SQLiteConnection conn = DatabaseConnection.GetConnection())
+            {
+                if (conn == null) return null;
+
+                var snapshot = new DashboardSnapshot();
+                using (var cmd = new SQLiteCommand(
+                    "SELECT BarangayName, Municipality, Province, Region, Address FROM company_profile LIMIT 1",
+                    conn))
+                using (var reader = cmd.ExecuteReader())
                 {
-                    string query = @"SELECT BarangayName, Municipality, Province, Region, Address
-                                     FROM company_profile LIMIT 1";
-                    using (var reader = new SQLiteCommand(query, conn).ExecuteReader())
+                    if (reader.Read())
                     {
-                        if (reader.Read())
+                        snapshot.BarangayName = reader["BarangayName"]?.ToString();
+                        var parts = new List<string>();
+                        foreach (string column in new[] { "Address", "Municipality", "Province", "Region" })
                         {
-                            string name = reader["BarangayName"]?.ToString() ?? "";
-                            var parts = new List<string>();
-                            foreach (string col in new[] { "Address", "Municipality", "Province", "Region" })
-                            {
-                                string v = reader[col]?.ToString() ?? "";
-                                if (!string.IsNullOrWhiteSpace(v)) parts.Add(v);
-                            }
-                            lblBarangayName.Text = string.IsNullOrWhiteSpace(name) ? "No name set" : name;
-                            lblBarangayAddress.Text = string.Join(", ", parts);
+                            string value = reader[column]?.ToString();
+                            if (!string.IsNullOrWhiteSpace(value)) parts.Add(value);
                         }
-                        else
-                        {
-                            lblBarangayName.Text = "No profile set";
-                            lblBarangayAddress.Text = "Go to Company Profile to set up.";
-                        }
+                        snapshot.BarangayAddress = string.Join(", ", parts);
                     }
                 }
-                catch (Exception ex)
+
+                snapshot.TotalResidents = ExecuteCount(conn, "SELECT COUNT(*) FROM resident WHERE IsActive=1");
+                snapshot.TotalOfficials = ExecuteCount(conn, "SELECT COUNT(*) FROM officials WHERE IsActive=1");
+                snapshot.ActiveUsers = ExecuteCount(conn, "SELECT COUNT(*) FROM users WHERE IsActive=1");
+                snapshot.PendingBlotters = ExecuteCount(conn, "SELECT COUNT(*) FROM blotter WHERE Status='Pending'");
+                snapshot.PendingClearances = ExecuteCount(conn, "SELECT COUNT(*) FROM clearance WHERE Status='Pending'");
+                using (var command = new SQLiteCommand(
+                    "SELECT COALESCE(SUM(Amount),0) FROM ayuda", conn))
+                    snapshot.TotalAyuda = Convert.ToDecimal(command.ExecuteScalar());
+                snapshot.TotalClearances = ExecuteCount(conn, "SELECT COUNT(*) FROM clearance");
+                snapshot.IssuedClearances = ExecuteCount(conn,
+                    "SELECT COUNT(*) FROM clearance WHERE Status='Issued' OR Status='Released'");
+                snapshot.TotalBlotters = ExecuteCount(conn, "SELECT COUNT(*) FROM blotter");
+                snapshot.ResolvedBlotters = ExecuteCount(conn, "SELECT COUNT(*) FROM blotter WHERE Status='Resolved'");
+
+                DateTime currentMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+                for (int i = 0; i < 6; i++)
                 {
-                    lblBarangayName.Text = "Error";
-                    lblBarangayAddress.Text = ex.Message;
+                    DateTime month = currentMonth.AddMonths(i - 5);
+                    string monthValue = month.ToString("MM");
+                    string yearValue = month.ToString("yyyy");
+                    snapshot.ClearanceByMonth[i] = ExecuteDateCount(conn, "clearance", "DateIssued", monthValue, yearValue);
+                    snapshot.CertificatesByMonth[i] = ExecuteDateCount(conn, "certificates", "DateIssued", monthValue, yearValue);
+                    snapshot.BlottersByMonth[i] = ExecuteDateCount(conn, "blotter", "DateFiled", monthValue, yearValue);
                 }
+
+                string activityQuery = @"
+                    SELECT 'Clearance' AS Type, ClearanceNumber AS RefNumber,
+                           DateIssued AS Date,
+                           r.LastName || ', ' || r.FirstName AS ResidentName,
+                           Purpose AS Details
+                    FROM clearance c
+                    INNER JOIN resident r ON c.ResidentID = r.idResident
+                    WHERE c.Status != 'Cancelled'
+                    UNION ALL
+                    SELECT 'Certificate', CertificateNumber, DateIssued,
+                           r.LastName || ', ' || r.FirstName, CertificateType
+                    FROM certificates c
+                    INNER JOIN resident r ON c.ResidentID = r.idResident
+                    WHERE c.Status != 'Cancelled'
+                    UNION ALL
+                    SELECT 'Blotter', BlotterNumber, DateFiled, RespondentName, IncidentType
+                    FROM blotter WHERE Status != 'Resolved'
+                    UNION ALL
+                    SELECT 'Ayuda', BarcodeID, DateReleased,
+                           r.LastName || ', ' || r.FirstName,
+                           '₱' || printf('%.0f', Amount)
+                    FROM ayuda a
+                    INNER JOIN resident r ON a.ResidentID = r.idResident
+                    ORDER BY Date DESC LIMIT 15";
+                using (var adapter = new SQLiteDataAdapter(activityQuery, conn))
+                    adapter.Fill(snapshot.RecentActivities);
+
+                return snapshot;
             }
         }
 
-        private void LoadDashboardStatistics()
+        private static int ExecuteCount(SQLiteConnection conn, string query)
         {
-            SQLiteConnection conn = DatabaseConnection.GetConnection();
-            if (conn == null) return;
-            using (conn)
+            using (var command = new SQLiteCommand(query, conn))
+                return Convert.ToInt32(command.ExecuteScalar());
+        }
+
+        private static int ExecuteDateCount(SQLiteConnection conn, string table, string dateColumn, string month, string year)
+        {
+            string query = "SELECT COUNT(*) FROM `" + table + "` WHERE strftime('%m', `" +
+                           dateColumn + "`) = @month AND strftime('%Y', `" + dateColumn + "`) = @year";
+            using (var command = new SQLiteCommand(query, conn))
             {
-                try
-                {
-                    object r;
-
-                    r = new SQLiteCommand("SELECT COUNT(*) FROM resident WHERE IsActive=1", conn).ExecuteScalar();
-                    lblTotalResidents.Text = r.ToString();
-                    lblTrendResidents.Text = "Active residents";
-                    lblTrendResidents.ForeColor = TrendUp;
-
-                    r = new SQLiteCommand("SELECT COUNT(*) FROM officials WHERE IsActive=1", conn).ExecuteScalar();
-                    lblTotalOfficials.Text = r.ToString();
-
-                    r = new SQLiteCommand("SELECT COUNT(*) FROM users WHERE IsActive=1", conn).ExecuteScalar();
-                    lblActiveUsers.Text = r.ToString();
-
-                    r = new SQLiteCommand("SELECT COUNT(*) FROM blotter WHERE Status='Pending'", conn).ExecuteScalar();
-                    int pb = Convert.ToInt32(r);
-                    lblPendingBlotters.Text = pb.ToString();
-                    lblTrendBlotters.Text = pb > 0 ? pb + " need attention" : "All resolved";
-                    lblTrendBlotters.ForeColor = pb > 0 ? TrendDown : TrendUp;
-
-                    r = new SQLiteCommand("SELECT COUNT(*) FROM clearance WHERE Status='Pending'", conn).ExecuteScalar();
-                    int pc = Convert.ToInt32(r);
-                    lblPendingClearances.Text = pc.ToString();
-                    lblTrendClearances.Text = pc > 0 ? pc + " pending" : "None pending";
-                    lblTrendClearances.ForeColor = pc > 0 ? TrendDown : TrendUp;
-
-                    r = new SQLiteCommand("SELECT COALESCE(SUM(Amount),0) FROM ayuda", conn).ExecuteScalar();
-                    decimal total = Convert.ToDecimal(r);
-                    lblTotalAyuda.Text = "₱" + total.ToString("N0");
-                    lblTrendAyuda.Text = "Total released";
-                    lblTrendAyuda.ForeColor = TrendUp;
-
-                    int totClr = Convert.ToInt32(new SQLiteCommand("SELECT COUNT(*) FROM clearance", conn).ExecuteScalar());
-                    int issuedClr = Convert.ToInt32(new SQLiteCommand(
-                        "SELECT COUNT(*) FROM clearance WHERE Status='Issued' OR Status='Released'", conn).ExecuteScalar());
-                    if (totClr > 0) SetPct(pbClearance, lblPctClearance, (int)(issuedClr * 100.0 / totClr));
-
-                    int totBlt = Convert.ToInt32(new SQLiteCommand("SELECT COUNT(*) FROM blotter", conn).ExecuteScalar());
-                    int resBlt = Convert.ToInt32(new SQLiteCommand(
-                        "SELECT COUNT(*) FROM blotter WHERE Status='Resolved'", conn).ExecuteScalar());
-                    if (totBlt > 0) SetPct(pbBlotter, lblPctBlotter, (int)(resBlt * 100.0 / totBlt));
-
-                    LayoutProgressBars(_statusCard, _statusCard.Width, _statusCard.Height);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Error loading analytics statistics: " + ex.Message,
-                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                command.Parameters.AddWithValue("@month", month);
+                command.Parameters.AddWithValue("@year", year);
+                return Convert.ToInt32(command.ExecuteScalar());
             }
         }
 
-        private void LoadMonthlyData()
+        private void ApplyDashboardSnapshot(DashboardSnapshot snapshot)
         {
-            SQLiteConnection conn = DatabaseConnection.GetConnection();
-            if (conn == null) return;
-            using (conn)
+            lblBarangayName.Text = string.IsNullOrWhiteSpace(snapshot.BarangayName)
+                ? "No name set" : snapshot.BarangayName;
+            lblBarangayAddress.Text = snapshot.BarangayAddress ?? "Go to Company Profile to set up.";
+
+            lblTotalResidents.Text = snapshot.TotalResidents.ToString();
+            lblTrendResidents.Text = "Active residents";
+            lblTrendResidents.ForeColor = TrendUp;
+            lblTotalOfficials.Text = snapshot.TotalOfficials.ToString();
+            lblActiveUsers.Text = snapshot.ActiveUsers.ToString();
+            lblPendingBlotters.Text = snapshot.PendingBlotters.ToString();
+            lblTrendBlotters.Text = snapshot.PendingBlotters > 0
+                ? snapshot.PendingBlotters + " need attention" : "All resolved";
+            lblTrendBlotters.ForeColor = snapshot.PendingBlotters > 0 ? TrendDown : TrendUp;
+            lblPendingClearances.Text = snapshot.PendingClearances.ToString();
+            lblTrendClearances.Text = snapshot.PendingClearances > 0
+                ? snapshot.PendingClearances + " pending" : "None pending";
+            lblTrendClearances.ForeColor = snapshot.PendingClearances > 0 ? TrendDown : TrendUp;
+            lblTotalAyuda.Text = "₱" + snapshot.TotalAyuda.ToString("N0");
+            lblTrendAyuda.Text = "Total released";
+            lblTrendAyuda.ForeColor = TrendUp;
+
+            if (snapshot.TotalClearances > 0)
+                SetPct(pbClearance, lblPctClearance,
+                    (int)(snapshot.IssuedClearances * 100.0 / snapshot.TotalClearances));
+            if (snapshot.TotalBlotters > 0)
+                SetPct(pbBlotter, lblPctBlotter,
+                    (int)(snapshot.ResolvedBlotters * 100.0 / snapshot.TotalBlotters));
+
+            Array.Copy(snapshot.ClearanceByMonth, _clrData, _clrData.Length);
+            Array.Copy(snapshot.CertificatesByMonth, _certData, _certData.Length);
+            Array.Copy(snapshot.BlottersByMonth, _bltData, _bltData.Length);
+            _chartPanel?.Invalidate();
+            LayoutProgressBars(_statusCard, _statusCard.Width, _statusCard.Height);
+
+            dgvRecentActivity.DataSource = snapshot.RecentActivities;
+            if (dgvRecentActivity.Columns.Count > 0)
             {
-                try
-                {
-                    int curMonth = DateTime.Now.Month;
-                    int curYear = DateTime.Now.Year;
-
-                    for (int i = 0; i < 6; i++)
-                    {
-                        int mo = curMonth - 5 + i;
-                        int yr = curYear;
-                        if (mo <= 0) { mo += 12; yr--; }
-
-                        _clrData[i] = Convert.ToInt32(new SQLiteCommand(
-                            $"SELECT COUNT(*) FROM clearance WHERE MONTH(DateIssued)={mo} AND YEAR(DateIssued)={yr}", conn).ExecuteScalar());
-                        _certData[i] = Convert.ToInt32(new SQLiteCommand(
-                            $"SELECT COUNT(*) FROM certificates WHERE MONTH(DateIssued)={mo} AND YEAR(DateIssued)={yr}", conn).ExecuteScalar());
-                        _bltData[i] = Convert.ToInt32(new SQLiteCommand(
-                            $"SELECT COUNT(*) FROM blotter WHERE MONTH(DateFiled)={mo} AND YEAR(DateFiled)={yr}", conn).ExecuteScalar());
-                    }
-
-                    _chartPanel?.Invalidate();
-                }
-                catch { /* chart shows zeros on error */ }
+                dgvRecentActivity.Columns["Type"].HeaderText = "Type";
+                dgvRecentActivity.Columns["RefNumber"].HeaderText = "Reference No.";
+                dgvRecentActivity.Columns["Date"].HeaderText = "Date";
+                dgvRecentActivity.Columns["ResidentName"].HeaderText = "Resident / Respondent";
+                dgvRecentActivity.Columns["Details"].HeaderText = "Details";
+                dgvRecentActivity.Columns["Date"].DefaultCellStyle.Format = "MMM dd, yyyy";
+                dgvRecentActivity.Columns["Type"].Width = 110;
+                dgvRecentActivity.Columns["RefNumber"].Width = 150;
+                dgvRecentActivity.Columns["Date"].Width = 120;
+                dgvRecentActivity.Columns["ResidentName"].Width = 180;
+                dgvRecentActivity.Columns["Details"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
             }
         }
 
-        private void LoadRecentActivities()
+        public async void RefreshDashboard()
         {
-            SQLiteConnection conn = DatabaseConnection.GetConnection();
-            if (conn == null) return;
-            using (conn)
-            {
-                try
-                {
-                    string query = @"
-                        SELECT 'Clearance' AS Type, ClearanceNumber AS RefNumber,
-                               DateIssued AS Date,
-                               CONCAT(r.LastName, ', ', r.FirstName) AS ResidentName,
-                               Purpose AS Details
-                        FROM clearance c
-                        INNER JOIN resident r ON c.ResidentID = r.idResident
-                        WHERE c.Status != 'Cancelled'
-                        UNION ALL
-                        SELECT 'Certificate', CertificateNumber, DateIssued,
-                               CONCAT(r.LastName, ', ', r.FirstName), CertificateType
-                        FROM certificates c
-                        INNER JOIN resident r ON c.ResidentID = r.idResident
-                        WHERE c.Status != 'Cancelled'
-                        UNION ALL
-                        SELECT 'Blotter', BlotterNumber, DateFiled,
-                               RespondentName, IncidentType
-                        FROM blotter WHERE Status != 'Resolved'
-                        UNION ALL
-                        SELECT 'Ayuda', BarcodeID, DateReleased,
-                               CONCAT(r.LastName, ', ', r.FirstName),
-                               CONCAT('₱', FORMAT(Amount, 0))
-                        FROM ayuda a
-                        INNER JOIN resident r ON a.ResidentID = r.idResident
-                        ORDER BY Date DESC LIMIT 15";
-
-                    var da = new SQLiteDataAdapter(query, conn);
-                    var dt = new DataTable();
-                    da.Fill(dt);
-                    dgvRecentActivity.DataSource = dt;
-
-                    if (dgvRecentActivity.Columns.Count > 0)
-                    {
-                        dgvRecentActivity.Columns["Type"].HeaderText = "Type";
-                        dgvRecentActivity.Columns["RefNumber"].HeaderText = "Reference No.";
-                        dgvRecentActivity.Columns["Date"].HeaderText = "Date";
-                        dgvRecentActivity.Columns["ResidentName"].HeaderText = "Resident / Respondent";
-                        dgvRecentActivity.Columns["Details"].HeaderText = "Details";
-                        dgvRecentActivity.Columns["Date"].DefaultCellStyle.Format = "MMM dd, yyyy";
-                        dgvRecentActivity.Columns["Type"].Width = 110;
-                        dgvRecentActivity.Columns["RefNumber"].Width = 150;
-                        dgvRecentActivity.Columns["Date"].Width = 120;
-                        dgvRecentActivity.Columns["ResidentName"].Width = 180;
-                        dgvRecentActivity.Columns["Details"].AutoSizeMode =
-                            DataGridViewAutoSizeColumnMode.Fill;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Error loading recent activities: " + ex.Message,
-                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }
-        }
-
-        public void RefreshDashboard()
-        {
-            LoadBarangayInfo();
-            LoadDashboardStatistics();
-            LoadMonthlyData();
-            LoadRecentActivities();
+            await RefreshDashboardAsync();
         }
 
         // ═════════════════════════════════════════════════════════════════════

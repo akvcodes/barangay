@@ -38,6 +38,27 @@ namespace BarangayManagementSystem.Controls
             return ProfileStore.Load();
         }
 
+        public static void EnsureLoginSettingsColumns(System.Data.SQLite.SQLiteConnection connection)
+        {
+            bool tableExists = false;
+            bool hasAddressSubtitle = false;
+            bool hasFooterText = false;
+            using (var check = new System.Data.SQLite.SQLiteCommand("PRAGMA table_info(company_profile)", connection))
+            using (var reader = check.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    tableExists = true;
+                    string name = reader["name"].ToString();
+                    if (string.Equals(name, "LoginAddressSubtitle", StringComparison.OrdinalIgnoreCase)) hasAddressSubtitle = true;
+                    if (string.Equals(name, "LoginFooterText", StringComparison.OrdinalIgnoreCase)) hasFooterText = true;
+                }
+            }
+            if (!tableExists) throw new InvalidOperationException("The company_profile table does not exist.");
+            if (!hasAddressSubtitle) new System.Data.SQLite.SQLiteCommand("ALTER TABLE company_profile ADD COLUMN LoginAddressSubtitle TEXT", connection).ExecuteNonQuery();
+            if (!hasFooterText) new System.Data.SQLite.SQLiteCommand("ALTER TABLE company_profile ADD COLUMN LoginFooterText TEXT", connection).ExecuteNonQuery();
+        }
+
         public void ShowMyAccount()
         {
             _tabs.SelectedIndex = 2;
@@ -206,60 +227,115 @@ namespace BarangayManagementSystem.Controls
             private readonly TextBox _title = Field();
             private readonly TextBox _municipality = Field();
             private readonly TextBox _tagline = Field();
+            private readonly TextBox _loginTitle = Field();
+            private readonly TextBox _loginSubtitle = Field();
+            private readonly TextBox _loginAddressSubtitle = Field();
+            private readonly TextBox _loginFooter = Field();
             private readonly PictureBox _logo = Preview();
             private readonly PictureBox _background = Preview();
             private readonly PictureBox _topLogo = Preview();
             private readonly PictureBox _vendorLogo = Preview();
+            private readonly PictureBox _loginLogo = Preview();
             private byte[] _logoBytes;
             private byte[] _topLogoBytes;
             private byte[] _vendorLogoBytes;
+            private byte[] _loginLogoBytes;
+            private bool _loginLogoRemoved;
             private string _backgroundPath;
-            private FlowLayoutPanel _scroll;
+            private FlowLayoutPanel _mainMenuScroll;
+            private FlowLayoutPanel _loginScroll;
+            private TableLayoutPanel _mainMenuBranding;
+            private TableLayoutPanel _loginBranding;
+            private Panel _identity;
+            private TabControl _tabs;
 
             public SystemProfileEditor()
             {
                 BackColor = BgPage;
-                _scroll = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(2), BackColor = BgPage };
-                var scroll = _scroll;
-                scroll.HorizontalScroll.Enabled = false;
-                scroll.HorizontalScroll.Visible = false;
-                scroll.Controls.Add(Header("Identity", "Keep the official system identity consistent across login and the main menu."));
-                var identity = Card(700, 218);
-                StyleCard(identity);
-                AddField(identity, "System title", _title, 18, 18, 650);
-                AddField(identity, "Municipality / barangay", _municipality, 18, 70, 650);
-                AddField(identity, "Login screen tagline", _tagline, 18, 122, 650);
-                scroll.Controls.Add(identity);
-                scroll.Controls.Add(Header("Login branding", "Use the official seal and a clear left-panel image for the sign-in experience."));
-                var branding = new TableLayoutPanel { Width = 700, Height = 350, ColumnCount = 2, RowCount = 2, BackColor = BgPage, Margin = new Padding(0, 0, 0, 16), Padding = new Padding(0) };
-                branding.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); branding.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-                branding.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); branding.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-                branding.Controls.Add(UploadCard("Login seal / logo", _logo, 0), 0, 0);
-                branding.Controls.Add(UploadCard("Left panel background", _background, 1), 1, 0);
-                branding.Controls.Add(UploadCard("Top bar logo (left)", _topLogo, 2), 0, 1);
-                branding.Controls.Add(UploadCard("Vendor logo (right)", _vendorLogo, 3), 1, 1);
-                var save = ActionButton("SAVE SYSTEM PROFILE", BtnGreen); save.Location = new Point(2, 0); save.Click += Save; scroll.Controls.Add(branding); scroll.Controls.Add(save);
-                Controls.Add(scroll);
+                _tabs = new TabControl { Dock = DockStyle.Fill };
+                var mainMenuPage = new TabPage("Main Menu Branding");
+                var loginPage = new TabPage("Login Screen Branding");
+                _mainMenuScroll = CreateProfileScroll();
+                _loginScroll = CreateProfileScroll();
+                mainMenuPage.Controls.Add(_mainMenuScroll);
+                loginPage.Controls.Add(_loginScroll);
+                _tabs.TabPages.Add(mainMenuPage);
+                _tabs.TabPages.Add(loginPage);
+                Controls.Add(_tabs);
+
+                _mainMenuScroll.Controls.Add(Header("Main Menu Identity", "Identity and branding shown in the main menu."));
+                _identity = Card(700, 218);
+                StyleCard(_identity);
+                AddField(_identity, "System title", _title, 18, 18, 650);
+                AddField(_identity, "Municipality / barangay", _municipality, 18, 70, 650);
+                AddField(_identity, "Main menu tagline", _tagline, 18, 122, 650);
+                _mainMenuScroll.Controls.Add(_identity);
+                _mainMenuScroll.Controls.Add(Header("Main Menu Branding", "Upload the logos used by the main menu."));
+                _mainMenuBranding = CreateBrandingGrid(350);
+                _mainMenuBranding.Controls.Add(UploadCard("Main Menu Brand Logo", _logo, 0), 0, 0);
+                _mainMenuBranding.Controls.Add(UploadCard("Top Bar Logo", _topLogo, 2), 1, 0);
+                _mainMenuBranding.Controls.Add(UploadCard("Vendor Logo", _vendorLogo, 3), 0, 1);
+                _mainMenuScroll.Controls.Add(_mainMenuBranding);
+
+                _loginScroll.Controls.Add(Header("Login Screen Branding", "Set the login screen text, logo, and left-panel background."));
+                var loginText = Card(700, 270);
+                StyleCard(loginText);
+                AddField(loginText, "Login System Title", _loginTitle, 18, 12, 650);
+                AddField(loginText, "Login Subtitle", _loginSubtitle, 18, 64, 650);
+                AddField(loginText, "Login Address Subtitle", _loginAddressSubtitle, 18, 116, 650);
+                AddField(loginText, "Login Footer Text", _loginFooter, 18, 168, 650);
+                _loginScroll.Controls.Add(loginText);
+                _loginBranding = CreateBrandingGrid(180);
+                _loginBranding.Controls.Add(UploadCard("Login Right Logo", _loginLogo, 4), 0, 0);
+                _loginBranding.Controls.Add(UploadCard("Login Left Background Image", _background, 1), 1, 0);
+                _loginScroll.Controls.Add(_loginBranding);
+
+                var mainMenuSave = ActionButton("SAVE SYSTEM PROFILE", BtnGreen);
+                mainMenuSave.Click += Save;
+                _mainMenuScroll.Controls.Add(mainMenuSave);
+                var loginSave = ActionButton("SAVE SYSTEM PROFILE", BtnGreen);
+                loginSave.Click += Save;
+                _loginScroll.Controls.Add(loginSave);
                 Resize += (s, e) =>
                 {
                     int width = Math.Max(700, ClientSize.Width - 8);
-                    identity.Width = width;
+                    _identity.Width = width;
                     _title.Width = Math.Max(400, width - 36);
                     _municipality.Width = Math.Max(400, width - 36);
                     _tagline.Width = Math.Max(400, width - 36);
-                    branding.Width = width;
-                    branding.ColumnStyles[0].Width = 50;
-                    branding.ColumnStyles[1].Width = 50;
-                    foreach (Control item in branding.Controls)
+                    _loginTitle.Width = Math.Max(400, width - 36);
+                    _loginSubtitle.Width = Math.Max(400, width - 36);
+                    _loginAddressSubtitle.Width = Math.Max(400, width - 36);
+                    _loginFooter.Width = Math.Max(400, width - 36);
+                    _mainMenuBranding.Width = width;
+                    _loginBranding.Width = width;
+                    foreach (Control item in _mainMenuBranding.Controls)
                         item.Width = Math.Max(300, (width / 2) - 12);
-                    save.Left = 2;
+                    foreach (Control item in _loginBranding.Controls)
+                        item.Width = Math.Max(300, (width / 2) - 12);
                 };
                 Load += (s, e) => LoadProfile();
             }
 
+            private static FlowLayoutPanel CreateProfileScroll() => new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(2), BackColor = BgPage };
+
+            private static TableLayoutPanel CreateBrandingGrid(int height)
+            {
+                var grid = new TableLayoutPanel { Width = 700, Height = height, ColumnCount = 2, RowCount = height > 180 ? 2 : 1, BackColor = BgPage, Margin = new Padding(0, 0, 0, 16), Padding = new Padding(0) };
+                grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+                grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+                if (height > 180)
+                {
+                    grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+                    grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+                }
+                return grid;
+            }
+
             public void RefreshData()
             {
-                _scroll.AutoScrollPosition = new Point(0, 0);
+                _mainMenuScroll.AutoScrollPosition = new Point(0, 0);
+                _loginScroll.AutoScrollPosition = new Point(0, 0);
                 LoadProfile();
             }
 
@@ -293,16 +369,45 @@ namespace BarangayManagementSystem.Controls
                 if (assetType == 0) { _logo.Image = null; _logoBytes = null; }
                 else if (assetType == 1) { _background.Image = null; _backgroundPath = null; }
                 else if (assetType == 2) { _topLogo.Image = null; _topLogoBytes = null; }
-                else { _vendorLogo.Image = null; _vendorLogoBytes = null; }
+                else if (assetType == 3) { _vendorLogo.Image = null; _vendorLogoBytes = null; }
+                else { _loginLogo.Image = null; _loginLogoBytes = null; _loginLogoRemoved = true; }
             }
 
             private void LoadProfile()
             {
-                var data = ProfileStore.Load(); _title.Text = data.SystemTitle; _municipality.Text = data.Municipality; _tagline.Text = data.Tagline; _backgroundPath = data.BackgroundPath;
+                var data = ProfileStore.Load(); _title.Text = data.SystemTitle; _municipality.Text = data.Municipality; _tagline.Text = data.Tagline;
+                _loginTitle.Text = data.LoginSystemTitle; _loginSubtitle.Text = data.LoginSubtitle; _loginFooter.Text = data.LoginFooterText;
+                _loginAddressSubtitle.Text = data.LoginAddressSubtitle;
+                using (var conn = DatabaseConnection.GetConnection())
+                {
+                    if (conn != null)
+                    {
+                        try
+                        {
+                            SettingsHubControl.EnsureLoginSettingsColumns(conn);
+                            using (var cmd = new System.Data.SQLite.SQLiteCommand("SELECT LoginAddressSubtitle, LoginFooterText FROM company_profile WHERE id=1", conn))
+                            using (var reader = cmd.ExecuteReader())
+                            {
+                                if (reader.Read())
+                                {
+                                    if (reader["LoginAddressSubtitle"] != DBNull.Value) _loginAddressSubtitle.Text = reader["LoginAddressSubtitle"].ToString();
+                                    if (reader["LoginFooterText"] != DBNull.Value) _loginFooter.Text = reader["LoginFooterText"].ToString();
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show("Error loading login text settings: " + ex.Message, "System Profile Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+                }
+                _backgroundPath = string.IsNullOrWhiteSpace(data.LoginLeftBackgroundPath) ? data.BackgroundPath : data.LoginLeftBackgroundPath;
                 SetPreviewImage(_logo, data.LogoPath, Properties.Resources.Screenshot_2026_04_09_152025_removebg_preview);
-                SetPreviewImage(_background, data.BackgroundPath, null);
+                SetPreviewImage(_background, _backgroundPath, null);
                 SetPreviewImage(_topLogo, data.TopLogoPath, Properties.Resources._670410901_1461128808847271_3971153690831708275_n_removebg_preview4);
                 SetPreviewImage(_vendorLogo, data.VendorLogoPath, Properties.Resources._666490564_1453982712886852_4612032811985093738_n_removebg_preview2);
+                SetPreviewImage(_loginLogo, data.LoginRightLogoPath, Properties.Resources.Screenshot_2026_04_09_152025_removebg_preview);
+                _loginLogoRemoved = false;
             }
 
             private static void SetPreviewImage(PictureBox preview, string path, Image fallback)
@@ -339,7 +444,8 @@ namespace BarangayManagementSystem.Controls
                             if (assetType == 0) { _logo.Image = new Bitmap(image); _logoBytes = ms.ToArray(); }
                             else if (assetType == 1) { _background.Image = new Bitmap(image); _backgroundPath = dialog.FileName; }
                             else if (assetType == 2) { _topLogo.Image = new Bitmap(image); _topLogoBytes = ms.ToArray(); }
-                            else { _vendorLogo.Image = new Bitmap(image); _vendorLogoBytes = ms.ToArray(); }
+                            else if (assetType == 3) { _vendorLogo.Image = new Bitmap(image); _vendorLogoBytes = ms.ToArray(); }
+                            else { _loginLogo.Image = new Bitmap(image); _loginLogoBytes = ms.ToArray(); _loginLogoRemoved = false; }
                         }
                     }
                 }
@@ -349,10 +455,54 @@ namespace BarangayManagementSystem.Controls
             {
                 if (string.IsNullOrWhiteSpace(_title.Text) || string.IsNullOrWhiteSpace(_municipality.Text)) { MessageBox.Show("System title and municipality are required.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
                 var data = ProfileStore.Load(); data.SystemTitle = _title.Text.Trim(); data.Municipality = _municipality.Text.Trim(); data.Tagline = _tagline.Text.Trim();
+                data.LoginSystemTitle = _loginTitle.Text.Trim(); data.LoginSubtitle = _loginSubtitle.Text.Trim(); data.LoginFooterText = _loginFooter.Text.Trim();
+                data.LoginAddressSubtitle = _loginAddressSubtitle.Text.Trim();
+                using (var conn = DatabaseConnection.GetConnection())
+                {
+                    if (conn == null) return;
+                    try
+                    {
+                        SettingsHubControl.EnsureLoginSettingsColumns(conn);
+                        using (var transaction = conn.BeginTransaction())
+                        using (var update = new System.Data.SQLite.SQLiteCommand(
+                            "UPDATE company_profile SET BarangayName=@title, Municipality=@municipality, LoginAddressSubtitle=@addressSubtitle, LoginFooterText=@footerText WHERE id=1",
+                            conn, transaction))
+                        {
+                            update.Parameters.AddWithValue("@title", data.SystemTitle);
+                            update.Parameters.AddWithValue("@municipality", data.Municipality);
+                            update.Parameters.AddWithValue("@addressSubtitle", data.LoginAddressSubtitle);
+                            update.Parameters.AddWithValue("@footerText", data.LoginFooterText);
+                            if (update.ExecuteNonQuery() == 0)
+                            {
+                                using (var insert = new System.Data.SQLite.SQLiteCommand(
+                                    "INSERT INTO company_profile (id, BarangayName, Municipality, LoginAddressSubtitle, LoginFooterText) VALUES (1, @title, @municipality, @addressSubtitle, @footerText)",
+                                    conn, transaction))
+                                {
+                                    insert.Parameters.AddWithValue("@title", data.SystemTitle);
+                                    insert.Parameters.AddWithValue("@municipality", data.Municipality);
+                                    insert.Parameters.AddWithValue("@addressSubtitle", data.LoginAddressSubtitle);
+                                    insert.Parameters.AddWithValue("@footerText", data.LoginFooterText);
+                                    insert.ExecuteNonQuery();
+                                }
+                            }
+                            transaction.Commit();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Error saving login profile to the database:\n" + ex.Message,
+                            "Save Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                }
                 if (_logoBytes != null) { Directory.CreateDirectory(ProfileStore.AssetDirectory); data.LogoPath = Path.Combine(ProfileStore.AssetDirectory, "system-logo.png"); File.WriteAllBytes(data.LogoPath, _logoBytes); }
                 if (_topLogoBytes != null) { Directory.CreateDirectory(ProfileStore.AssetDirectory); data.TopLogoPath = Path.Combine(ProfileStore.AssetDirectory, "top-logo.png"); File.WriteAllBytes(data.TopLogoPath, _topLogoBytes); }
                 if (_vendorLogoBytes != null) { Directory.CreateDirectory(ProfileStore.AssetDirectory); data.VendorLogoPath = Path.Combine(ProfileStore.AssetDirectory, "vendor-logo.png"); File.WriteAllBytes(data.VendorLogoPath, _vendorLogoBytes); }
-                data.BackgroundPath = _backgroundPath; ProfileStore.Save(data); MessageBox.Show("System profile saved.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (_loginLogoBytes != null) { Directory.CreateDirectory(ProfileStore.AssetDirectory); data.LoginRightLogoPath = Path.Combine(ProfileStore.AssetDirectory, "login-right-logo.png"); File.WriteAllBytes(data.LoginRightLogoPath, _loginLogoBytes); }
+                if (_loginLogoRemoved) data.LoginRightLogoPath = string.Empty;
+                data.LoginLeftBackgroundPath = _backgroundPath ?? string.Empty;
+                data.BackgroundPath = data.LoginLeftBackgroundPath;
+                ProfileStore.Save(data); MessageBox.Show("System profile saved.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 
@@ -551,7 +701,17 @@ namespace BarangayManagementSystem.Controls
             {
                 if (_newPassword.Text.Length < 6 || _newPassword.Text != _confirmPassword.Text) { MessageBox.Show("Use at least 6 matching characters.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
                 if (MessageBox.Show("Change your password now?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-                using (var conn = DatabaseConnection.GetConnection()) using (var cmd = new System.Data.SQLite.SQLiteCommand("UPDATE users SET Password=MD5(@pw) WHERE Username=@user", conn)) { cmd.Parameters.AddWithValue("@pw", _newPassword.Text); cmd.Parameters.AddWithValue("@user", CurrentUser.Username); cmd.ExecuteNonQuery(); }
+                string salt = CryptoHelper.GenerateSalt();
+                using (var conn = DatabaseConnection.GetConnection())
+                using (var cmd = new System.Data.SQLite.SQLiteCommand(
+                    "UPDATE users SET Password=@pw, Salt=@salt WHERE Username=@user", conn))
+                {
+                    cmd.Parameters.AddWithValue(
+                        "@pw", CryptoHelper.ComputeSHA256(_newPassword.Text, salt));
+                    cmd.Parameters.AddWithValue("@salt", salt);
+                    cmd.Parameters.AddWithValue("@user", CurrentUser.Username);
+                    cmd.ExecuteNonQuery();
+                }
                 _newPassword.Clear(); _confirmPassword.Clear(); MessageBox.Show("Password changed.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
 
@@ -831,6 +991,6 @@ namespace BarangayManagementSystem.Controls
             public static SystemProfileData Load() { try { return File.Exists(FilePath) ? JsonSerializer.Deserialize<SystemProfileData>(File.ReadAllText(FilePath)) ?? new SystemProfileData() : new SystemProfileData(); } catch { return new SystemProfileData(); } }
             public static void Save(SystemProfileData data) { Directory.CreateDirectory(Path.GetDirectoryName(FilePath)); File.WriteAllText(FilePath, JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true })); }
         }
-        public sealed class SystemProfileData { public string SystemTitle { get; set; } = "Barangay Management System"; public string Municipality { get; set; } = ""; public string Tagline { get; set; } = "eTechTugon Software Solution"; public string LogoPath { get; set; } = ""; public string BackgroundPath { get; set; } = ""; public string TopLogoPath { get; set; } = ""; public string VendorLogoPath { get; set; } = ""; }
+        public sealed class SystemProfileData { public string SystemTitle { get; set; } = "Barangay Management System"; public string Municipality { get; set; } = ""; public string Tagline { get; set; } = "eTechTugon Software Solution"; public string LogoPath { get; set; } = ""; public string BackgroundPath { get; set; } = ""; public string TopLogoPath { get; set; } = ""; public string VendorLogoPath { get; set; } = ""; public string LoginSystemTitle { get; set; } = "Barangay Management System"; public string LoginSubtitle { get; set; } = "Please sign in to your account"; public string LoginAddressSubtitle { get; set; } = "Poblacion, Matanao, Davao del Sur"; public string LoginFooterText { get; set; } = "Barangay Management System"; public string LoginRightLogoPath { get; set; } = ""; public string LoginLeftBackgroundPath { get; set; } = ""; }
     }
 }

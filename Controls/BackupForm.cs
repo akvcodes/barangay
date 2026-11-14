@@ -10,6 +10,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Windows.Forms;
+using System.Threading.Tasks;
 
 namespace BarangayManagementSystem
 {
@@ -38,6 +39,7 @@ namespace BarangayManagementSystem
         private Label _lblStatus;
         private TextBox _txtBackupPath;
         private Button _btnBrowseFolder;
+        private bool _historyLoading;
 
         // ══════════════════════════════════════════════════════════════════════
         public BackupForm()
@@ -491,24 +493,56 @@ namespace BarangayManagementSystem
         // ══════════════════════════════════════════════════════════════════════
         private void LoadHistory()
         {
-            _lstHistory.Items.Clear();
-            if (!Directory.Exists(_backupFolder))
-            { _lstHistory.Items.Add(" No backups yet."); return; }
+            if (_historyLoading) return;
+            _historyLoading = true;
+            string folder = _backupFolder;
+            LoadingOverlay.ShowLoading(this);
+            LoadHistoryAsync(folder);
+        }
 
-            var files = Directory.GetFiles(_backupFolder, "*.sql");
+        private async void LoadHistoryAsync(string folder)
+        {
+            try
+            {
+                var items = await Task.Run(() => GetHistoryItems(folder));
+                _lstHistory.BeginUpdate();
+                _lstHistory.Items.Clear();
+                _lstHistory.Items.AddRange(items.ToArray());
+                _lstHistory.EndUpdate();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error loading backup history:\n" + ex.Message,
+                    "Backup Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _historyLoading = false;
+                LoadingOverlay.HideLoading(this);
+            }
+        }
+
+        private static System.Collections.Generic.List<string> GetHistoryItems(string folder)
+        {
+            if (!Directory.Exists(folder))
+                return new System.Collections.Generic.List<string> { " No backups yet." };
+
+            var files = Directory.GetFiles(folder, "*.sql");
             if (files.Length == 0)
-            { _lstHistory.Items.Add(" No backup files found."); return; }
+                return new System.Collections.Generic.List<string> { " No backup files found." };
 
             Array.Sort(files, (a, b) =>
                 File.GetCreationTime(b).CompareTo(File.GetCreationTime(a)));
 
-            foreach (string f in files)
+            var items = new System.Collections.Generic.List<string>(files.Length);
+            foreach (string file in files)
             {
-                var fi = new FileInfo(f);
-                string kb = (fi.Length / 1024).ToString("N0") + " KB";
-                string dt = fi.CreationTime.ToString("yyyy-MM-dd HH:mm:ss");
-                _lstHistory.Items.Add($" {fi.Name,-50} {kb,8} {dt}");
+                var info = new FileInfo(file);
+                string kb = (info.Length / 1024).ToString("N0") + " KB";
+                string date = info.CreationTime.ToString("yyyy-MM-dd HH:mm:ss");
+                items.Add($" {info.Name,-50} {kb,8} {date}");
             }
+            return items;
         }
 
         private void DeleteSelected()

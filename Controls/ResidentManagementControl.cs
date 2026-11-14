@@ -1984,6 +1984,15 @@ namespace BarangayManagementSystem.Controls
             BackColor = Color.Transparent,
         };
 
+        private static string DecryptForDisplay(object value)
+        {
+            if (value == null || value == DBNull.Value) return "";
+            string original = value.ToString();
+            if (string.IsNullOrEmpty(original)) return original;
+            try { return CryptoHelper.Decrypt(original, KeyManager.LoadKey()); }
+            catch (CryptoException) { return original; }
+        }
+
         private void LoadData()
         {
             var conn = DatabaseConnection.GetConnection();
@@ -2009,8 +2018,8 @@ namespace BarangayManagementSystem.Controls
                     try { civil = r["CivilStatus"]?.ToString() ?? "Single"; } catch { }
                     if (_cboCivilStatus.Items.Contains(civil)) _cboCivilStatus.SelectedItem = civil; else _cboCivilStatus.SelectedIndex = 0;
 
-                    _txtContact.Text = r["ContactNumber"]?.ToString() ?? "";
-                    _txtAddr.Text = r["Address"]?.ToString() ?? "";
+                    _txtContact.Text = DecryptForDisplay(r["ContactNumber"]);
+                    _txtAddr.Text = DecryptForDisplay(r["Address"]);
                     try { _txtOccupation.Text = r["Occupation"]?.ToString() ?? ""; } catch { }
 
                     try { _chkVoter.Checked = r["IsRegisteredVoter"] != DBNull.Value && Convert.ToBoolean(r["IsRegisteredVoter"]); } catch { }
@@ -2029,7 +2038,7 @@ namespace BarangayManagementSystem.Controls
                     catch { _txtCitizenship.Text = "Filipino"; }
                     try { _txtHeight.Text = r["Height"]?.ToString() ?? ""; } catch { }
                     try { _txtWeight.Text = r["Weight"]?.ToString() ?? ""; } catch { }
-                    try { _txtTIN.Text = r["TIN"]?.ToString() ?? ""; } catch { }
+                    try { _txtTIN.Text = DecryptForDisplay(r["TIN"]); } catch { }
                     try { _txtICR.Text = r["ICRNumber"]?.ToString() ?? ""; } catch { }
 
                     if (r["Photo"] != DBNull.Value)
@@ -2103,8 +2112,14 @@ namespace BarangayManagementSystem.Controls
                     cmd.Parameters.AddWithValue("@mn", _txtMN.Text.Trim());
                     cmd.Parameters.AddWithValue("@dob", _dtpBirth.Value.Date);
                     cmd.Parameters.AddWithValue("@g", _cboGender.SelectedItem?.ToString() ?? "Male");
-                    cmd.Parameters.AddWithValue("@c", _txtContact.Text.Trim());
-                    cmd.Parameters.AddWithValue("@a", _txtAddr.Text.Trim());
+                    string contactNumber = _txtContact.Text.Trim();
+                    cmd.Parameters.AddWithValue("@c", string.IsNullOrEmpty(contactNumber)
+                        ? (object)contactNumber
+                        : CryptoHelper.Encrypt(contactNumber, KeyManager.GetOrCreateKey()));
+                    string address = _txtAddr.Text.Trim();
+                    cmd.Parameters.AddWithValue("@a", string.IsNullOrEmpty(address)
+                        ? (object)address
+                        : CryptoHelper.Encrypt(address, KeyManager.GetOrCreateKey()));
                     cmd.Parameters.AddWithValue("@cs", _cboCivilStatus.SelectedItem?.ToString() ?? "Single");
                     cmd.Parameters.AddWithValue("@occ", _txtOccupation.Text.Trim());
                     cmd.Parameters.AddWithValue("@p", (object)_photoBytes ?? DBNull.Value);
@@ -2118,7 +2133,10 @@ namespace BarangayManagementSystem.Controls
                     cmd.Parameters.AddWithValue("@cit", string.IsNullOrWhiteSpace(_txtCitizenship.Text) ? "Filipino" : _txtCitizenship.Text.Trim());
                     cmd.Parameters.AddWithValue("@ht", string.IsNullOrWhiteSpace(_txtHeight.Text) ? (object)DBNull.Value : _txtHeight.Text.Trim());
                     cmd.Parameters.AddWithValue("@wt", string.IsNullOrWhiteSpace(_txtWeight.Text) ? (object)DBNull.Value : _txtWeight.Text.Trim());
-                    cmd.Parameters.AddWithValue("@tin", string.IsNullOrWhiteSpace(_txtTIN.Text) ? (object)DBNull.Value : _txtTIN.Text.Trim());
+                    string tin = _txtTIN.Text.Trim();
+                    cmd.Parameters.AddWithValue("@tin", string.IsNullOrWhiteSpace(tin)
+                        ? (object)DBNull.Value
+                        : CryptoHelper.Encrypt(tin, KeyManager.GetOrCreateKey()));
                     cmd.Parameters.AddWithValue("@icr", string.IsNullOrWhiteSpace(_txtICR.Text) ? (object)DBNull.Value : _txtICR.Text.Trim());
                     cmd.Parameters.AddWithValue("@id", _residentId);
 

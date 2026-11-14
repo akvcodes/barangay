@@ -20,7 +20,7 @@
             this.lblSystemTitle = new System.Windows.Forms.Label();
             this.lblSystemSub = new System.Windows.Forms.Label();
             this.label4 = new System.Windows.Forms.Label();
-            this.txtUsername = new System.Windows.Forms.TextBox();
+            this.txtUsername = new System.Windows.Forms.ComboBox();
             this.label5 = new System.Windows.Forms.Label();
             this.txtPassword = new System.Windows.Forms.TextBox();
             this.chkShowPassword = new System.Windows.Forms.CheckBox();
@@ -140,7 +140,7 @@
             // txtUsername
             // 
             this.txtUsername.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(245)))), ((int)(((byte)(246)))), ((int)(((byte)(252)))));
-            this.txtUsername.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.txtUsername.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDown;
             this.txtUsername.Font = new System.Drawing.Font("Segoe UI", 11F);
             this.txtUsername.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(20)))), ((int)(((byte)(25)))), ((int)(((byte)(70)))));
             this.txtUsername.Location = new System.Drawing.Point(78, 432);
@@ -361,7 +361,7 @@
         private System.Windows.Forms.Label lblSystemSub;
         private System.Windows.Forms.Label label4;
         private System.Windows.Forms.Label label5;
-        private System.Windows.Forms.TextBox txtUsername;
+        private System.Windows.Forms.ComboBox txtUsername;
         private System.Windows.Forms.TextBox txtPassword;
         private System.Windows.Forms.CheckBox chkShowPassword;
         private System.Windows.Forms.Button btnLogin;

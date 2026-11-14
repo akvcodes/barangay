@@ -9,6 +9,28 @@ namespace BarangayManagementSystem
     {
         private const int KeySizeBytes = 32;
         private const int IvSizeBytes = 16;
+        private const int SaltSizeBytes = 32;
+
+        public static string GenerateSalt()
+        {
+            byte[] salt = new byte[SaltSizeBytes];
+            using (var rng = new RNGCryptoServiceProvider())
+                rng.GetBytes(salt);
+            return Convert.ToBase64String(salt);
+        }
+
+        public static string ComputeSHA256(string password, string salt)
+        {
+            if (password == null) throw new ArgumentNullException(nameof(password));
+            if (salt == null) throw new ArgumentNullException(nameof(salt));
+
+            using (var sha256 = SHA256.Create())
+            {
+                byte[] hash = sha256.ComputeHash(
+                    Encoding.UTF8.GetBytes(password + salt));
+                return Convert.ToBase64String(hash);
+            }
+        }
 
         public static string Encrypt(string plainText, byte[] key)
         {

@@ -10,6 +10,7 @@ using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using System.Threading.Tasks;
 
 namespace BarangayManagementSystem.Controls
 {
@@ -29,8 +30,10 @@ namespace BarangayManagementSystem.Controls
         private TextBox _txtSearch;
         private ComboBox _cboModule, _cboAction;
         private DateTimePicker _dtpFrom, _dtpTo;
+        private DateTime _defaultFromDate, _defaultToDate;
         private Label _lblCount;
         private Panel _topBar;
+        private bool _loadingLogs;
 
         public UserTransactionLogsControl()
         {
@@ -180,7 +183,7 @@ namespace BarangayManagementSystem.Controls
                 Font = new Font("Segoe UI", 9.5f),
                 Location = new Point(fx, fy + 20),
                 Size = new Size(130, 28),
-                Value = DateTime.Now.AddDays(-30),
+                Value = DateTime.Today.AddDays(-30),
             };
             filterCard.Controls.Add(_dtpFrom);
             fx += 148;
@@ -191,9 +194,11 @@ namespace BarangayManagementSystem.Controls
                 Font = new Font("Segoe UI", 9.5f),
                 Location = new Point(fx, fy + 20),
                 Size = new Size(130, 28),
-                Value = DateTime.Now,
+                Value = DateTime.Today,
             };
             filterCard.Controls.Add(_dtpTo);
+            _defaultFromDate = _dtpFrom.Value.Date;
+            _defaultToDate = _dtpTo.Value.Date;
             fx += 148;
 
             var btnFilter = Btn("🔍  Filter", BtnBlue);
@@ -210,8 +215,8 @@ namespace BarangayManagementSystem.Controls
                 _txtSearch.Clear();
                 _cboModule.SelectedIndex = 0;
                 _cboAction.SelectedIndex = 0;
-                _dtpFrom.Value = DateTime.Now.AddDays(-30);
-                _dtpTo.Value = DateTime.Now;
+                _dtpFrom.Value = _defaultFromDate;
+                _dtpTo.Value = _defaultToDate;
                 LoadLogs();
             };
             filterCard.Controls.Add(btnClear);
@@ -259,77 +264,118 @@ namespace BarangayManagementSystem.Controls
         // ══════════════════════════════════════════════════════════════════════
         //  LOAD LOGS
         // ══════════════════════════════════════════════════════════════════════
-        private void LoadLogs()
+        private async void LoadLogs()
         {
-            var conn = DatabaseConnection.GetConnection();
-            if (conn == null) return;
-            using (conn)
+            await LoadLogsAsync();
+        }
+
+        private async Task LoadLogsAsync()
+        {
+            if (_loadingLogs) return;
+            _loadingLogs = true;
+
+            string search = _txtSearch.Text.Trim();
+            string moduleFilter = _cboModule.SelectedIndex > 0
+                ? _cboModule.SelectedItem.ToString().Trim()
+                : null;
+            if (string.Equals(moduleFilter, "Users", StringComparison.OrdinalIgnoreCase))
+                moduleFilter = "User";
+
+            bool filterByDate =
+                _dtpFrom.Value.Date != _defaultFromDate ||
+                _dtpTo.Value.Date != _defaultToDate;
+            DateTime from = _dtpFrom.Value.Date;
+            DateTime to = _dtpTo.Value.Date.AddDays(1);
+            string actionFilter = _cboAction.SelectedIndex > 0
+                ? _cboAction.SelectedItem.ToString()
+                : null;
+
+            LoadingOverlay.ShowLoading(this);
+            try
             {
-                try
+                DataTable dt = await Task.Run(() =>
+                    LoadLogsFromDatabase(search, moduleFilter, actionFilter, filterByDate, from, to));
+                _dgv.DataSource = dt;
+                FormatLogsGrid(dt);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error loading logs:\n" + ex.Message,
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                LoadingOverlay.HideLoading(this);
+                _loadingLogs = false;
+            }
+        }
+
+        private static DataTable LoadLogsFromDatabase(
+            string search, string moduleFilter, string actionFilter,
+            bool filterByDate, DateTime from, DateTime to)
+        {
+            using (var conn = DatabaseConnection.GetConnection())
+            {
+                if (conn == null) throw new InvalidOperationException("Could not connect to the local database.");
+
+                string where = "WHERE 1=1";
+                if (filterByDate)
+                    where += " AND datetime(LoggedAt) >= datetime(@from) " +
+                             "AND datetime(LoggedAt) < datetime(@to)";
+                if (!string.IsNullOrWhiteSpace(search))
+                    where += " AND (Username LIKE @s OR Description LIKE @s OR Role LIKE @s)";
+                if (!string.IsNullOrEmpty(moduleFilter))
+                    where += " AND Module COLLATE NOCASE LIKE @module";
+                if (!string.IsNullOrEmpty(actionFilter))
+                    where += " AND Action COLLATE NOCASE = @action";
+
+                using (var adapter = new SQLiteDataAdapter($@"
+                    SELECT idLog AS ID, LoggedAt AS DateTime, Username, Role, Action,
+                           Module, Description, IPAddress AS IP
+                    FROM auditlog
+                    {where}
+                    ORDER BY LoggedAt DESC
+                    LIMIT 500", conn))
                 {
-                    string where = "WHERE LoggedAt BETWEEN @from AND @to";
-                    if (!string.IsNullOrWhiteSpace(_txtSearch.Text))
-                        where += " AND (Username LIKE @s OR Description LIKE @s OR Role LIKE @s)";
-                    if (_cboModule.SelectedIndex > 0)
-                        where += " AND Module = @module";
-                    if (_cboAction.SelectedIndex > 0)
-                        where += " AND Action = @action";
-
-                    var da = new SQLiteDataAdapter($@"
-                        SELECT
-                            idLog        AS ID,
-                            LoggedAt     AS DateTime,
-                            Username,
-                            Role,
-                            Action,
-                            Module,
-                            Description,
-                            IPAddress    AS IP
-                        FROM auditlog
-                        {where}
-                        ORDER BY LoggedAt DESC
-                        LIMIT 500", conn);
-
-                    da.SelectCommand.Parameters.AddWithValue("@from",
-                        _dtpFrom.Value.Date);
-                    da.SelectCommand.Parameters.AddWithValue("@to",
-                        _dtpTo.Value.Date.AddDays(1).AddSeconds(-1));
-
-                    if (!string.IsNullOrWhiteSpace(_txtSearch.Text))
-                        da.SelectCommand.Parameters.AddWithValue("@s", "%" + _txtSearch.Text.Trim() + "%");
-                    if (_cboModule.SelectedIndex > 0)
-                        da.SelectCommand.Parameters.AddWithValue("@module", _cboModule.SelectedItem.ToString());
-                    if (_cboAction.SelectedIndex > 0)
-                        da.SelectCommand.Parameters.AddWithValue("@action", _cboAction.SelectedItem.ToString());
+                    if (filterByDate)
+                    {
+                        adapter.SelectCommand.Parameters.AddWithValue("@from", from);
+                        adapter.SelectCommand.Parameters.AddWithValue("@to", to);
+                    }
+                    if (!string.IsNullOrWhiteSpace(search))
+                        adapter.SelectCommand.Parameters.AddWithValue("@s", "%" + search + "%");
+                    if (!string.IsNullOrEmpty(moduleFilter))
+                        adapter.SelectCommand.Parameters.AddWithValue("@module", "%" + moduleFilter + "%");
+                    if (!string.IsNullOrEmpty(actionFilter))
+                        adapter.SelectCommand.Parameters.AddWithValue("@action", actionFilter);
 
                     var dt = new DataTable();
-                    da.Fill(dt);
-                    _dgv.DataSource = dt;
-
-                    // Column formatting
-                    _dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
-                    if (_dgv.Columns.Contains("ID")) { _dgv.Columns["ID"].Width = 60; }
-                    if (_dgv.Columns.Contains("DateTime")) { _dgv.Columns["DateTime"].Width = 150; _dgv.Columns["DateTime"].DefaultCellStyle.Format = "MMM dd, yyyy  hh:mm tt"; }
-                    if (_dgv.Columns.Contains("Username")) { _dgv.Columns["Username"].Width = 120; }
-                    if (_dgv.Columns.Contains("Role")) { _dgv.Columns["Role"].Width = 100; }
-                    if (_dgv.Columns.Contains("Action")) { _dgv.Columns["Action"].Width = 90; }
-                    if (_dgv.Columns.Contains("Module")) { _dgv.Columns["Module"].Width = 100; }
-                    if (_dgv.Columns.Contains("IP")) { _dgv.Columns["IP"].Width = 110; }
-                    if (_dgv.Columns.Contains("Description"))
-                        _dgv.Columns["Description"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-
-                    // Color code by action
-                    _dgv.CellFormatting -= ColorRows;
-                    _dgv.CellFormatting += ColorRows;
-
-                    _lblCount.Text = $"Showing {dt.Rows.Count} record{(dt.Rows.Count != 1 ? "s" : "")} (max 500)";
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Error loading logs:\n" + ex.Message,
-                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    adapter.Fill(dt);
+                    return dt;
                 }
             }
+        }
+
+        private void FormatLogsGrid(DataTable dt)
+        {
+            _dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+            if (_dgv.Columns.Contains("ID")) _dgv.Columns["ID"].Width = 60;
+            if (_dgv.Columns.Contains("DateTime"))
+            {
+                _dgv.Columns["DateTime"].Width = 150;
+                _dgv.Columns["DateTime"].DefaultCellStyle.Format = "MMM dd, yyyy  hh:mm tt";
+            }
+            if (_dgv.Columns.Contains("Username")) _dgv.Columns["Username"].Width = 120;
+            if (_dgv.Columns.Contains("Role")) _dgv.Columns["Role"].Width = 100;
+            if (_dgv.Columns.Contains("Action")) _dgv.Columns["Action"].Width = 90;
+            if (_dgv.Columns.Contains("Module")) _dgv.Columns["Module"].Width = 100;
+            if (_dgv.Columns.Contains("IP")) _dgv.Columns["IP"].Width = 110;
+            if (_dgv.Columns.Contains("Description"))
+                _dgv.Columns["Description"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+
+            _dgv.CellFormatting -= ColorRows;
+            _dgv.CellFormatting += ColorRows;
+            _lblCount.Text = $"Showing {dt.Rows.Count} record{(dt.Rows.Count != 1 ? "s" : "")} (max 500)";
         }
 
         private void ColorRows(object sender, DataGridViewCellFormattingEventArgs e)

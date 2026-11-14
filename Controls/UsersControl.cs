@@ -697,11 +697,14 @@ namespace BarangayManagementSystem.Controls
             {
                 try
                 {
+                    string salt = CryptoHelper.GenerateSalt();
                     var cmd = new SQLiteCommand(@"
-                        INSERT INTO users (Username, Password, Role, IsActive, Photo)
-                        VALUES (@u, MD5(@p), @r, @a, @photo)", conn);
+                        INSERT INTO users (Username, Password, Salt, Role, IsActive, Photo)
+                        VALUES (@u, @p, @salt, @r, @a, @photo)", conn);
                     cmd.Parameters.AddWithValue("@u", _txtUsername.Text.Trim());
-                    cmd.Parameters.AddWithValue("@p", _txtPassword.Text);
+                    cmd.Parameters.AddWithValue(
+                        "@p", CryptoHelper.ComputeSHA256(_txtPassword.Text, salt));
+                    cmd.Parameters.AddWithValue("@salt", salt);
                     cmd.Parameters.AddWithValue("@r", _cboRole.SelectedItem.ToString());
                     cmd.Parameters.AddWithValue("@a",
                         _cboStatus.SelectedItem.ToString() == "Active" ? 1 : 0);
@@ -733,13 +736,18 @@ namespace BarangayManagementSystem.Controls
             {
                 try
                 {
+                    string salt = changingPassword ? CryptoHelper.GenerateSalt() : null;
                     string q = changingPassword
-                        ? "UPDATE users SET Password=MD5(@p), Role=@r, IsActive=@a, Photo=@photo WHERE idUsers=@id"
+                        ? "UPDATE users SET Password=@p, Salt=@salt, Role=@r, IsActive=@a, Photo=@photo WHERE idUsers=@id"
                         : "UPDATE users SET Role=@r, IsActive=@a, Photo=@photo WHERE idUsers=@id";
 
                     var cmd = new SQLiteCommand(q, conn);
                     if (changingPassword)
-                        cmd.Parameters.AddWithValue("@p", _txtPassword.Text);
+                    {
+                        cmd.Parameters.AddWithValue(
+                            "@p", CryptoHelper.ComputeSHA256(_txtPassword.Text, salt));
+                        cmd.Parameters.AddWithValue("@salt", salt);
+                    }
                     cmd.Parameters.AddWithValue("@r", _cboRole.SelectedItem.ToString());
                     cmd.Parameters.AddWithValue("@a",
                         _cboStatus.SelectedItem.ToString() == "Active" ? 1 : 0);

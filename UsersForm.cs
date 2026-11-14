@@ -223,12 +223,15 @@ namespace BarangayManagementSystem
                 {
                     try
                     {
-                        string query = @"INSERT INTO Users (Username, Password, Role, IsActive) 
-                                VALUES (@username, @password, @role, @isActive)";
+                        string salt = CryptoHelper.GenerateSalt();
+                        string query = @"INSERT INTO Users (Username, Password, Salt, Role, IsActive)
+                                VALUES (@username, @password, @salt, @role, @isActive)";
 
                         SQLiteCommand cmd = new SQLiteCommand(query, conn);
                         cmd.Parameters.AddWithValue("@username", txtUsername.Text.Trim());
-                        cmd.Parameters.AddWithValue("@password", txtPassword.Text); // In production, you should hash this!
+                        cmd.Parameters.AddWithValue(
+                            "@password", CryptoHelper.ComputeSHA256(txtPassword.Text, salt));
+                        cmd.Parameters.AddWithValue("@salt", salt);
                         cmd.Parameters.AddWithValue("@role", cboRole.SelectedItem.ToString());
                         cmd.Parameters.AddWithValue("@isActive", cboStatus.SelectedItem.ToString() == "Active" ? 1 : 0);
 
@@ -294,15 +297,19 @@ namespace BarangayManagementSystem
                         // Check if password is being changed
                         if (!string.IsNullOrWhiteSpace(txtPassword.Text))
                         {
+                            string salt = CryptoHelper.GenerateSalt();
                             // Update with new password
                             query = @"UPDATE Users 
                                     SET Username = @username, 
                                         Password = @password, 
+                                        Salt = @salt,
                                         Role = @role, 
                                         IsActive = @isActive 
                                     WHERE idUsers = @id";
                             cmd = new SQLiteCommand(query, conn);
-                            cmd.Parameters.AddWithValue("@password", txtPassword.Text);
+                            cmd.Parameters.AddWithValue(
+                                "@password", CryptoHelper.ComputeSHA256(txtPassword.Text, salt));
+                            cmd.Parameters.AddWithValue("@salt", salt);
                         }
                         else
                         {

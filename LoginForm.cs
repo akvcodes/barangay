@@ -136,6 +136,8 @@ namespace BarangayManagementSystem
         // ══════════════════════════════════════════════════════════════════════
         private void LoginForm_Load(object sender, EventArgs e)
         {
+            LoadLoginBranding();
+            LoadUsernames();
             txtUsername.Select();
 
             _rbLocal.Visible = false;
@@ -143,6 +145,133 @@ namespace BarangayManagementSystem
             _rbOnline.Visible = false;
             _lblConnType.Visible = false;
             _lblConnStatus.Visible = false;
+        }
+
+        private void LoadLoginBranding()
+        {
+            var systemProfile = BarangayManagementSystem.Controls.SettingsHubControl.LoadSystemProfile();
+            lblSystemTitle.Text = string.IsNullOrWhiteSpace(systemProfile.LoginSystemTitle)
+                ? "Barangay Management System" : systemProfile.LoginSystemTitle;
+            lblSystemSub.Text = string.IsNullOrWhiteSpace(systemProfile.LoginSubtitle)
+                ? "Please sign in to your account" : systemProfile.LoginSubtitle;
+            lblFooter.Text = string.IsNullOrWhiteSpace(systemProfile.LoginFooterText)
+                ? "Barangay Management System" : systemProfile.LoginFooterText;
+            lblLGUAddress.Text = systemProfile.LoginAddressSubtitle ?? string.Empty;
+            lblLGUName.Text = "Local Government";
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(systemProfile.LoginRightLogoPath) && File.Exists(systemProfile.LoginRightLogoPath))
+                {
+                    using (var source = Image.FromFile(systemProfile.LoginRightLogoPath))
+                    {
+                        pictureBoxLogo.Image?.Dispose();
+                        pictureBoxLogo.Image = new Bitmap(source);
+                        pictureBoxLogo.BackgroundImage = null;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error loading login logo: " + ex.Message,
+                    "Login Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            string backgroundPath = string.IsNullOrWhiteSpace(systemProfile.LoginLeftBackgroundPath)
+                ? systemProfile.BackgroundPath : systemProfile.LoginLeftBackgroundPath;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(backgroundPath) && File.Exists(backgroundPath))
+                {
+                    using (var source = Image.FromFile(backgroundPath))
+                    {
+                        panelLeft.BackgroundImage?.Dispose();
+                        panelLeft.BackgroundImage = new Bitmap(source);
+                        panelLeft.BackgroundImageLayout = ImageLayout.Stretch;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error loading login background: " + ex.Message,
+                    "Login Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            using (SQLiteConnection conn = DatabaseConnection.GetConnection())
+            {
+                if (conn == null) return;
+
+                try
+                {
+                    BarangayManagementSystem.Controls.SettingsHubControl.EnsureLoginSettingsColumns(conn);
+                    byte[] logoBytes = null;
+                    using (var cmd = new SQLiteCommand(
+                        "SELECT Municipality, LoginAddressSubtitle, LoginFooterText, Logo FROM company_profile WHERE id = 1 LIMIT 1",
+                        conn))
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            string municipality = reader["Municipality"]?.ToString();
+                            lblLGUName.Text = string.IsNullOrWhiteSpace(municipality)
+                                ? "Local Government"
+                                : "Local Government of " + municipality.Trim();
+                            if (reader["LoginAddressSubtitle"] != DBNull.Value)
+                                lblLGUAddress.Text = reader["LoginAddressSubtitle"].ToString();
+                            if (reader["LoginFooterText"] != DBNull.Value)
+                                lblFooter.Text = reader["LoginFooterText"].ToString();
+                            if (reader["Logo"] != DBNull.Value &&
+                                (string.IsNullOrWhiteSpace(systemProfile.LoginRightLogoPath) || !File.Exists(systemProfile.LoginRightLogoPath)))
+                                logoBytes = (byte[])reader["Logo"];
+                        }
+                    }
+
+                    if (logoBytes != null)
+                    {
+                        using (var stream = new MemoryStream(logoBytes))
+                        using (var logo = Image.FromStream(stream))
+                        {
+                            pictureBoxLogo.Image?.Dispose();
+                            pictureBoxLogo.Image = new Bitmap(logo);
+                            pictureBoxLogo.BackgroundImage = null;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Error loading login profile: " + ex.Message,
+                        "Login Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void LoadUsernames()
+        {
+            using (SQLiteConnection conn = DatabaseConnection.GetConnection())
+            {
+                if (conn == null) return;
+
+                try
+                {
+                    using (var cmd = new SQLiteCommand(
+                        "SELECT Username FROM users WHERE IsActive = 1 ORDER BY Username",
+                        conn))
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        txtUsername.BeginUpdate();
+                        txtUsername.Items.Clear();
+                        while (reader.Read())
+                            txtUsername.Items.Add(reader["Username"].ToString());
+                        txtUsername.EndUpdate();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    txtUsername.EndUpdate();
+                    MessageBox.Show("Error loading usernames: " + ex.Message,
+                        "Login Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -237,45 +366,142 @@ namespace BarangayManagementSystem
                 if (conn == null) return;
                 try
                 {
-                    string query =
-                        "SELECT idUsers, Username, Role " +
-                        "FROM users " +
-                        "WHERE Username = @username " +
-                        "  AND Password = @password " +
-                        "  AND IsActive = 1";
+                    EnsureUserSecurityColumns(conn);
 
+                    string query =
+                        "SELECT idUsers, Username, Role, Password, Salt " +
+                        "FROM users " +
+                        "WHERE Username = @username AND IsActive = 1";
+
+                    int userId = 0;
+                    string uname = "";
+                    string role = "";
+                    string storedPassword = "";
+                    string salt = null;
                     using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@username", username);
-                        cmd.Parameters.AddWithValue("@password", ComputeMD5(password));
-
                         using (SQLiteDataReader reader = cmd.ExecuteReader())
                         {
                             if (reader.Read())
                             {
-                                int userId = Convert.ToInt32(reader["idUsers"]);
-                                string uname = reader["Username"].ToString();
-                                string role = reader["Role"].ToString();
-
-                                CurrentUser.Login(userId, uname, role);
-                                CurrentUser.LoadProfile();
-
-                                ThemedDialog.Show(
-                                    "Welcome, " + uname + "!\nRole: " + role,
-                                    "Login Successful",
-                                    false);
-
-                                this.Hide();
-                                new MainMenuForm().Show();
-                            }
-                            else
-                            {
-                                lblMessage.Text = "Invalid username or password.";
-                                lblMessage.ForeColor = Color.Red;
-                                txtPassword.Clear();
-                                txtPassword.Focus();
+                                userId = Convert.ToInt32(reader["idUsers"]);
+                                uname = reader["Username"].ToString();
+                                role = reader["Role"].ToString();
+                                storedPassword = reader["Password"]?.ToString() ?? "";
+                                salt = reader["Salt"] == DBNull.Value
+                                    ? null
+                                    : reader["Salt"].ToString();
                             }
                         }
+                    }
+
+                    bool legacyPassword = false;
+                    bool passwordValid = false;
+                    if (userId > 0)
+                    {
+                        if (string.IsNullOrEmpty(salt))
+                        {
+                            bool matchesLegacyMd5 = string.Equals(
+                                storedPassword, ComputeMD5(password),
+                                StringComparison.OrdinalIgnoreCase);
+                            bool matchesLegacyPlaintext = string.Equals(
+                                storedPassword, password, StringComparison.Ordinal);
+                            passwordValid = matchesLegacyMd5 || matchesLegacyPlaintext;
+                            legacyPassword = passwordValid;
+                        }
+                        else
+                        {
+                            passwordValid = string.Equals(
+                                storedPassword, CryptoHelper.ComputeSHA256(password, salt),
+                                StringComparison.Ordinal);
+                        }
+                    }
+
+                    if (passwordValid)
+                    {
+                        if (legacyPassword)
+                        {
+                            salt = CryptoHelper.GenerateSalt();
+                            using (var upgradeCmd = new SQLiteCommand(
+                                "UPDATE users SET Password=@password, Salt=@salt WHERE idUsers=@id",
+                                conn))
+                            {
+                                upgradeCmd.Parameters.AddWithValue(
+                                    "@password", CryptoHelper.ComputeSHA256(password, salt));
+                                upgradeCmd.Parameters.AddWithValue("@salt", salt);
+                                upgradeCmd.Parameters.AddWithValue("@id", userId);
+                                upgradeCmd.ExecuteNonQuery();
+                            }
+                        }
+
+                        using (var resetCmd = new SQLiteCommand(
+                            "UPDATE users SET LoginAttempts = 0 WHERE idUsers = @id", conn))
+                        {
+                            resetCmd.Parameters.AddWithValue("@id", userId);
+                            resetCmd.ExecuteNonQuery();
+                        }
+
+                        CurrentUser.Login(userId, uname, role);
+                        CurrentUser.LoadProfile();
+                        ThemedDialog.Show(
+                            "Welcome, " + uname + "!\nRole: " + role,
+                            "Login Successful", false);
+                        this.Hide();
+                        new MainMenuForm().Show();
+                    }
+                    else
+                    {
+                        bool accountLocked = false;
+                        using (var transaction = conn.BeginTransaction())
+                        {
+                            int updatedRows;
+                            using (var incrementCmd = new SQLiteCommand(
+                                "UPDATE users SET LoginAttempts = COALESCE(LoginAttempts, 0) + 1 " +
+                                "WHERE Username = @username AND IsActive = 1",
+                                conn, transaction))
+                            {
+                                incrementCmd.Parameters.AddWithValue("@username", username);
+                                updatedRows = incrementCmd.ExecuteNonQuery();
+                            }
+
+                            object attemptsValue;
+                            using (var attemptsCmd = new SQLiteCommand(
+                                "SELECT LoginAttempts FROM users WHERE Username = @username",
+                                conn, transaction))
+                            {
+                                attemptsCmd.Parameters.AddWithValue("@username", username);
+                                attemptsValue = attemptsCmd.ExecuteScalar();
+                            }
+
+                            int attempts = attemptsValue == null || attemptsValue == DBNull.Value
+                                ? 0
+                                : Convert.ToInt32(attemptsValue);
+                            if (updatedRows > 0 && attempts >= 3)
+                            {
+                                using (var lockCmd = new SQLiteCommand(
+                                    "UPDATE users SET IsActive = 0 " +
+                                    "WHERE Username = @username AND IsActive = 1",
+                                    conn, transaction))
+                                {
+                                    lockCmd.Parameters.AddWithValue("@username", username);
+                                    accountLocked = lockCmd.ExecuteNonQuery() > 0;
+                                }
+                            }
+                            transaction.Commit();
+                        }
+
+                        if (accountLocked)
+                            MessageBox.Show(
+                                "Account locked due to 3 failed login attempts. Please contact the Admin.",
+                                "Account Locked", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        else
+                        {
+                            lblMessage.Text = "Invalid username or password.";
+                            lblMessage.ForeColor = Color.Red;
+                        }
+                        txtPassword.Clear();
+                        txtPassword.Focus();
                     }
                 }
                 catch (Exception ex)
@@ -284,6 +510,30 @@ namespace BarangayManagementSystem
                         "Login Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
+        }
+
+        private static void EnsureUserSecurityColumns(SQLiteConnection conn)
+        {
+            bool hasLoginAttempts = false;
+            bool hasSalt = false;
+            using (var check = new SQLiteCommand("PRAGMA table_info(users)", conn))
+            using (var reader = check.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    string name = reader["name"].ToString();
+                    hasLoginAttempts |= name.Equals("LoginAttempts", StringComparison.OrdinalIgnoreCase);
+                    hasSalt |= name.Equals("Salt", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            if (!hasLoginAttempts)
+                using (var alter = new SQLiteCommand(
+                    "ALTER TABLE users ADD COLUMN LoginAttempts INTEGER DEFAULT 0", conn))
+                    alter.ExecuteNonQuery();
+            if (!hasSalt)
+                using (var alter = new SQLiteCommand(
+                    "ALTER TABLE users ADD COLUMN Salt VARCHAR(100) DEFAULT NULL", conn))
+                    alter.ExecuteNonQuery();
         }
 
         private void btnInstallDB_Click(object sender, EventArgs e)
@@ -308,25 +558,36 @@ namespace BarangayManagementSystem
                         "idUsers INTEGER PRIMARY KEY AUTOINCREMENT," +
                         "Username TEXT NOT NULL UNIQUE," +
                         "Password TEXT NOT NULL," +
+                        "Salt VARCHAR(100) DEFAULT NULL," +
                         "Role TEXT DEFAULT 'User'," +
                         "IsActive INTEGER DEFAULT 1," +
+                        "LoginAttempts INTEGER DEFAULT 0," +
                         "CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP);", conn).ExecuteNonQuery();
 
+                    EnsureUserSecurityColumns(conn);
+                    string salt1 = CryptoHelper.GenerateSalt();
+                    string salt2 = CryptoHelper.GenerateSalt();
+                    string salt3 = CryptoHelper.GenerateSalt();
+                    string salt4 = CryptoHelper.GenerateSalt();
                     using (var cmd = new SQLiteCommand(
-                        "INSERT OR IGNORE INTO users (Username,Password,Role,IsActive) VALUES" +
-                        "(@u1,@p1,'SuperAdmin',1)," +
-                        "(@u2,@p2,'Admin',1)," +
-                        "(@u3,@p3,'Official',1)," +
-                        "(@u4,@p4,'User',1);", conn))
+                        "INSERT OR IGNORE INTO users (Username,Password,Salt,Role,IsActive) VALUES" +
+                        "(@u1,@p1,@s1,'SuperAdmin',1)," +
+                        "(@u2,@p2,@s2,'Admin',1)," +
+                        "(@u3,@p3,@s3,'Official',1)," +
+                        "(@u4,@p4,@s4,'User',1);", conn))
                     {
                         cmd.Parameters.AddWithValue("@u1", "superadmin");
-                        cmd.Parameters.AddWithValue("@p1", ComputeMD5("SuperAdmin123"));
+                        cmd.Parameters.AddWithValue("@s1", salt1);
+                        cmd.Parameters.AddWithValue("@p1", CryptoHelper.ComputeSHA256("SuperAdmin123", salt1));
                         cmd.Parameters.AddWithValue("@u2", "admin");
-                        cmd.Parameters.AddWithValue("@p2", ComputeMD5("admin123"));
+                        cmd.Parameters.AddWithValue("@s2", salt2);
+                        cmd.Parameters.AddWithValue("@p2", CryptoHelper.ComputeSHA256("admin123", salt2));
                         cmd.Parameters.AddWithValue("@u3", "official");
-                        cmd.Parameters.AddWithValue("@p3", ComputeMD5("official123"));
+                        cmd.Parameters.AddWithValue("@s3", salt3);
+                        cmd.Parameters.AddWithValue("@p3", CryptoHelper.ComputeSHA256("official123", salt3));
                         cmd.Parameters.AddWithValue("@u4", "user");
-                        cmd.Parameters.AddWithValue("@p4", ComputeMD5("user123"));
+                        cmd.Parameters.AddWithValue("@s4", salt4);
+                        cmd.Parameters.AddWithValue("@p4", CryptoHelper.ComputeSHA256("user123", salt4));
                         cmd.ExecuteNonQuery();
                     }
 

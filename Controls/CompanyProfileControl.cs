@@ -505,10 +505,13 @@ namespace BarangayManagementSystem.Controls
             {
                 try
                 {
+                    string salt = CryptoHelper.GenerateSalt();
                     var cmd = new SQLiteCommand(@"
-                        UPDATE users SET Password=MD5(@pw)
+                        UPDATE users SET Password=@pw, Salt=@salt
                         WHERE idUsers=@id", conn);
-                    cmd.Parameters.AddWithValue("@pw", _txtNewPassword.Text);
+                    cmd.Parameters.AddWithValue(
+                        "@pw", CryptoHelper.ComputeSHA256(_txtNewPassword.Text, salt));
+                    cmd.Parameters.AddWithValue("@salt", salt);
                     cmd.Parameters.AddWithValue("@id", CurrentUser.UserId);
                     cmd.ExecuteNonQuery();
 
